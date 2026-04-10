@@ -1,0 +1,119 @@
+@page "/articulos"
+@inject HttpClient Http
+
+<MudText Typo="Typo.h5" Class="mb-4 font-weight-bold" Color="Color.Primary">Catálogo de Artículos</MudText>
+
+<MudTextField @bind-Value="busqueda" Placeholder="Buscar artículos..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mb-4" OnKeyUp="@Buscar" Immediate="true"></MudTextField>
+
+@if (cargando)
+{
+    <MudProgressCircular Color="Color.Primary" Indeterminate="true" Class="mx-auto my-4 d-block" />
+}
+else if (articulos != null)
+{
+    <MudTable Items="articulos" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="2" Class="rounded-lg">
+        <HeaderContent>
+            <MudTh Style="width: 50px;"></MudTh>
+            <MudTh>Detalles Producto</MudTh>
+            <MudTh Style="width: 80px;">Precio</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>
+                @if (!string.IsNullOrEmpty(context.IMGART))
+                {
+                    <MudAvatar Image="@($"api/articulos/imagen?path={System.Net.WebUtility.UrlEncode(context.IMGART)}")" Size="Size.Large" Class="cursor-pointer elevation-1" OnClick="@(() => VerImagen(context))" />
+                }
+                else
+                {
+                    <MudAvatar Color="Color.Surface" Size="Size.Large" Variant="Variant.Outlined"><MudIcon Icon="@Icons.Material.Filled.Inventory2" /></MudAvatar>
+                }
+            </MudTd>
+            <MudTd DataLabel="Descripción">
+                <MudText Typo="Typo.body1" Class="font-weight-bold">@context.Descripcion</MudText>
+                <MudStack Row="true" Spacing="2">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Ref: @context.Codigo</MudText>
+                    <MudText Typo="Typo.caption" Color="@(context.Stock > 0 ? Color.Success : Color.Error)" Class="font-weight-bold">
+                        Stock: @context.Stock.ToString("N0") uds.
+                    </MudText>
+                </MudStack>
+            </MudTd>
+            <MudTd DataLabel="Precio">
+                <MudText Typo="Typo.body1" Color="Color.Primary" Class="font-weight-bold">@context.PrecioVenta.ToString("N2")</MudText>
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager HideRowsPerPage="true" />
+        </PagerContent>
+    </MudTable>
+}
+
+<MudDialog @bind-Visible="_visibleImagen" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">@_selectedArticulo?.Descripcion</MudText>
+    </TitleContent>
+    <DialogContent>
+        <div class="d-flex justify-center">
+            <MudImage Src="@($"api/articulos/imagen?path={System.Net.WebUtility.UrlEncode(_selectedArticulo?.IMGART)}")" Alt="Imagen Producto" Fluid="true" Class="rounded-lg" />
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="() => _visibleImagen = false" FullWidth="true" Class="py-3">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private List<Articulo>? articulos;
+    private bool cargando = true;
+    private string busqueda = "";
+    private System.Timers.Timer? debounceTimer;
+
+    private bool _visibleImagen;
+    private Articulo? _selectedArticulo;
+    private DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Medium, FullWidth = true, NoHeader = false };
+
+    private void VerImagen(Articulo articulo)
+    {
+        _selectedArticulo = articulo;
+        _visibleImagen = true;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadArticulos();
+    }
+
+    private async Task LoadArticulos()
+    {
+        cargando = true;
+        try
+        {
+            articulos = await Http.GetFromJsonAsync<List<Articulo>>($"api/articulos?busqueda={busqueda}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error fetching: {ex.Message}");
+        }
+        finally
+        {
+            cargando = false;
+            StateHasChanged();
+        }
+    }
+
+    private void Buscar(KeyboardEventArgs e)
+    {
+        if (debounceTimer != null)
+        {
+            debounceTimer.Stop();
+            debounceTimer.Dispose();
+        }
+        debounceTimer = new System.Timers.Timer(500);
+        debounceTimer.Elapsed += async (s, ev) => 
+        {
+            await InvokeAsync(async () => {
+                await LoadArticulos();
+            });
+        };
+        debounceTimer.Start();
+    }
+}

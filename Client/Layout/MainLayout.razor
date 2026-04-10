@@ -1,0 +1,79 @@
+@inherits LayoutComponentBase
+
+<MudThemeProvider Theme="FactuTheme" IsDarkMode="false" />
+<MudDialogProvider />
+<MudSnackbarProvider />
+<MudPopoverProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="0" Style="background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(8px); color: var(--mud-palette-primary);">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@ToggleDrawer" />
+        <MudText Typo="Typo.h5" Class="ml-3 font-weight-bold" Style="letter-spacing: -1px;">FactuSync <span style="color: var(--mud-palette-text-secondary); font-weight: 400;">Mobile</span></MudText>
+        <MudSpacer />
+        <MudAvatar Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">XY</MudAvatar>
+    </MudAppBar>
+    
+    <MudDrawer @bind-Open="@_drawerOpen" Elevation="1" ClipMode="DrawerClipMode.Always" Class="border-none">
+        <MudDrawerHeader Class="pa-4">
+            <MudText Typo="Typo.h6" Class="font-weight-bold">Centro de Control</MudText>
+        </MudDrawerHeader>
+        <MudNavMenu Class="mt-2">
+            <MudNavLink Href="/dashboard" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.SpaceDashboard" Class="rounded-lg mx-2 mb-1">Inicio</MudNavLink>
+            <MudNavLink Href="/clientes" Icon="@Icons.Material.Filled.PersonSearch" Class="rounded-lg mx-2 mb-1">Clientes</MudNavLink>
+            <MudNavLink Href="/pedidos" Icon="@Icons.Material.Filled.Receipt" Class="rounded-lg mx-2 mb-1">Mis Pedidos</MudNavLink>
+            <MudNavLink Href="/articulos" Icon="@Icons.Material.Filled.Category" Class="rounded-lg mx-2 mb-1">Catálogo</MudNavLink>
+            <MudDivider Class="my-4 mx-4" />
+            <MudNavLink Href="/" Icon="@Icons.Material.Filled.Logout" Class="rounded-lg mx-2 mb-1">Cerrar Sesión</MudNavLink>
+        </MudNavMenu>
+    </MudDrawer>
+
+    <MudMainContent Class="mud-background-gray">
+        <MudContainer MaxWidth="MaxWidth.Large" Class="pt-6 pb-16 px-4">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+
+    <!-- Bottom Navigation para Móviles - SOLUCIÓN DEFINITIVA DE CENTRADO -->
+    <MudHidden Breakpoint="Breakpoint.SmAndUp">
+        <div style="position: fixed; bottom: 0; left: 0; width: 100%; height: 75px; background-color: white; z-index: 2000; display: flex; justify-content: space-evenly; align-items: center; box-shadow: 0 -5px 15px rgba(0,0,0,0.1); border-top-left-radius: 25px; border-top-right-radius: 25px;">
+            <MudIconButton Icon="@Icons.Material.Filled.SpaceDashboard" Href="/dashboard" Color="Color.Primary" Size="Size.Medium" />
+            <MudIconButton Icon="@Icons.Material.Filled.PeopleAlt" Href="/clientes" Color="Color.Primary" Size="Size.Medium" />
+            
+            <div style="margin-top: -60px; border: 8px solid #F5F7FA; border-radius: 50%; background: white;">
+                <MudFab Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" Href="/pedidos/nuevo" Size="Size.Large" Class="elevation-12" />
+            </div>
+
+            <MudIconButton Icon="@Icons.Material.Filled.Inventory2" Href="/articulos" Color="Color.Primary" Size="Size.Medium" />
+            <MudIconButton Icon="@Icons.Material.Filled.History" Href="/pedidos" Color="Color.Primary" Size="Size.Medium" />
+        </div>
+    </MudHidden>
+</MudLayout>
+
+@code {
+    private bool _drawerOpen = true;
+
+    private MudTheme FactuTheme = new MudTheme()
+    {
+        PaletteLight = new PaletteLight()
+        {
+            Primary = "#0D47A1", // Azul Profesional Profundo
+            Secondary = "#00C853", // Verde Esmeralda para acciones
+            Tertiary = "#FF6D00", // Naranja para pedidos
+            Background = "#F5F7FA", // Gris muy claro limpio
+            AppbarBackground = "#FFFFFF",
+            DrawerBackground = "#FFFFFF",
+            Surface = "#FFFFFF",
+            TextPrimary = "#1A237E",
+            ActionDefault = "#546E7A"
+        },
+        LayoutProperties = new LayoutProperties()
+        {
+            DefaultBorderRadius = "12px"
+        }
+    };
+
+    private void ToggleDrawer()
+    {
+        _drawerOpen = !_drawerOpen;
+    }
+}

@@ -1,0 +1,80 @@
+@page "/dashboard"
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    <div class="mb-8 pl-2">
+        <MudText Typo="Typo.h4" Class="font-weight-bold" Color="Color.Primary">Panel de Control</MudText>
+        <MudText Typo="Typo.body1" Color="Color.Secondary">Bienvenido al centro de ventas de FactuSync</MudText>
+    </div>
+
+    <MudGrid Spacing="4">
+        <MudItem xs="12" sm="6">
+            <MudPaper Elevation="4" Class="pa-6 rounded-xl mud-width-full cursor-pointer hover-effect" @onclick="@(() => nav.NavigateTo("/clientes"))">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
+                    <MudAvatar Color="Color.Primary" Variant="Variant.Filled" Size="Size.Large">
+                        <MudIcon Icon="@Icons.Material.Filled.PeopleAlt" />
+                    </MudAvatar>
+                    <div class="flex-grow-1">
+                        <MudText Typo="Typo.h6" Class="font-weight-bold">Clientes</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">Gestionar cartera</MudText>
+                    </div>
+                    <MudIcon Icon="@Icons.Material.Filled.ArrowForwardIos" Size="Size.Small" Color="Color.Default" />
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" sm="6">
+            <MudPaper Elevation="4" Class="pa-6 rounded-xl mud-width-full cursor-pointer hover-effect" @onclick="@(() => nav.NavigateTo("/articulos"))">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
+                    <MudAvatar Color="Color.Secondary" Variant="Variant.Filled" Size="Size.Large">
+                        <MudIcon Icon="@Icons.Material.Filled.Inventory2" />
+                    </MudAvatar>
+                    <div class="flex-grow-1">
+                        <MudText Typo="Typo.h6" Class="font-weight-bold">Catálogo</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">Precios y stock</MudText>
+                    </div>
+                    <MudIcon Icon="@Icons.Material.Filled.ArrowForwardIos" Size="Size.Small" Color="Color.Default" />
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12">
+            <MudPaper Elevation="8" Class="pa-8 rounded-xl mud-width-full cursor-pointer hover-effect border-2 border-solid" 
+                      Style="border-color: var(--mud-palette-tertiary); background-color: var(--mud-palette-surface);"
+                      @onclick="@(() => nav.NavigateTo("/pedidos/nuevo"))">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="6">
+                    <MudAvatar Color="Color.Tertiary" Variant="Variant.Filled" Size="Size.Large" Style="width: 70px; height: 70px;">
+                        <MudIcon Icon="@Icons.Material.Filled.AddShoppingCart" Size="Size.Large" />
+                    </MudAvatar>
+                    <div class="flex-grow-1">
+                        <MudText Typo="Typo.h5" Class="font-weight-bold">NUEVO PEDIDO</MudText>
+                        <MudText Typo="Typo.body1" Class="mud-text-secondary">Capturar orden de venta inmediata</MudText>
+                    </div>
+                    <MudButton Variant="Variant.Filled" Color="Color.Tertiary" EndIcon="@Icons.Material.Filled.ArrowForward" Class="rounded-pill d-none d-sm-flex px-6">
+                        EMPEZAR
+                    </MudButton>
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <div class="mt-12 d-flex justify-center align-center gap-2">
+        <MudIcon Icon="@Icons.Material.Filled.CloudDone" Color="Color.Success" Size="Size.Small" />
+        <MudText Typo="Typo.caption" Class="mud-text-secondary">FactuSync Mobile V1.5 | Conexión Factusol Activa</MudText>
+    </div>
+</MudContainer>
+
+<style>
+    .hover-effect {
+        transition: all 0.2s ease-in-out;
+    }
+    .hover-effect:hover {
+        transform: translateY(-4px);
+        box-shadow: var(--mud-elevation-12);
+        background-color: var(--mud-palette-background-grey);
+    }
+    .cursor-pointer { cursor: pointer; }
+</style>
+
+@code {
+    [Inject] private NavigationManager nav { get; set; } = default!;
+}

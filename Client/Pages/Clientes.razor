@@ -1,0 +1,97 @@
+@page "/clientes"
+@inject HttpClient Http
+
+<MudText Typo="Typo.h5" Class="mb-4 font-weight-bold" Color="Color.Primary">Listado de Clientes</MudText>
+
+<MudTextField @bind-Value="busqueda" Placeholder="Buscar por nombre..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mb-4" OnKeyUp="@Buscar" Immediate="true"></MudTextField>
+
+@if (cargando)
+{
+    <MudProgressCircular Color="Color.Primary" Indeterminate="true" Class="mx-auto my-4 d-block" />
+}
+else if (clientes != null)
+{
+    <MudGrid>
+        @foreach (var c in clientes)
+        {
+            <MudItem xs="12" sm="6" md="4">
+                <MudCard Elevation="2" Class="rounded-lg">
+                    <MudCardHeader>
+                        <CardHeaderContent>
+                            <MudText Typo="Typo.h6">@c.Nombre</MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">COD: @c.Codigo | NIF: @c.CifDni</MudText>
+                        </CardHeaderContent>
+                    </MudCardHeader>
+                    <MudCardContent>
+                        <div class="d-flex align-center mb-2">
+                            <MudIcon Icon="@Icons.Material.Filled.Phone" Size="Size.Small" Class="mr-2" />
+                            <MudText Typo="Typo.body2">@c.Telefono</MudText>
+                        </div>
+                        <div class="d-flex align-center">
+                            <MudIcon Icon="@Icons.Material.Filled.Email" Size="Size.Small" Class="mr-2" />
+                            <MudText Typo="Typo.body2">@c.Email</MudText>
+                        </div>
+                    </MudCardContent>
+                    <MudCardActions>
+                        <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="@(() => CrearPedidoParaCliente(c))">Generar Pedido</MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@code {
+    [Inject] private NavigationManager NavManager { get; set; } = default!;
+
+    private List<Cliente>? clientes;
+    private bool cargando = true;
+    private string busqueda = "";
+    private System.Timers.Timer? debounceTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadClientes();
+    }
+
+    private async Task LoadClientes()
+    {
+        cargando = true;
+        try
+        {
+            clientes = await Http.GetFromJsonAsync<List<Cliente>>($"api/clientes?busqueda={busqueda}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error fetching: {ex.Message}");
+        }
+        finally
+        {
+            cargando = false;
+            StateHasChanged();
+        }
+    }
+
+    private void Buscar(KeyboardEventArgs e)
+    {
+        if (debounceTimer != null)
+        {
+            debounceTimer.Stop();
+            debounceTimer.Dispose();
+        }
+        debounceTimer = new System.Timers.Timer(500);
+        debounceTimer.Elapsed += async (s, ev) => 
+        {
+            await InvokeAsync(async () => {
+                await LoadClientes();
+            });
+        };
+        debounceTimer.Start();
+    }
+
+    private void CrearPedidoParaCliente(Cliente c)
+    {
+        // En una app real usar estado o query string
+        NavManager.NavigateTo($"/pedidos/nuevo?codcli={c.Codigo}&nomcli={Uri.EscapeDataString(c.Nombre)}");
+    }
+}

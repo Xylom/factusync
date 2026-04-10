@@ -1,0 +1,274 @@
+@page "/pedidos/nuevo"
+@inject HttpClient Http
+@inject ISnackbar Snackbar
+@inject NavigationManager NavManager
+@using FactuSync.Shared
+
+<MudText Typo="Typo.h5" Class="mb-4 font-weight-bold" Color="Color.Primary">Crear Nuevo Pedido</MudText>
+
+@if (string.IsNullOrEmpty(pedido.CodigoCliente))
+{
+    <MudAlert Severity="Severity.Warning" Class="mb-4">Por favor, seleccione un cliente primero desde la pantalla de clientes.</MudAlert>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => NavManager.NavigateTo("/clientes"))">Ir a Clientes</MudButton>
+}
+else
+{
+    <MudCard Class="mb-4 pa-4 elevation-2 rounded-lg">
+        <MudText Typo="Typo.h6" Color="Color.Primary"><b>@pedido.NombreCliente</b></MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">Código: @pedido.CodigoCliente</MudText>
+        
+        <MudGrid Class="mt-2">
+            <MudItem xs="4">
+                <MudSelect T="string" Label="Serie" Value="@pedido.TIPPCL" ValueChanged="OnSerieChanged" AnchorOrigin="Origin.BottomCenter" Required="true" Dense="true">
+                    @foreach (var s in seriesDisponibles)
+                    {
+                        <MudSelectItem Value="@s">Serie @s</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="4">
+                <MudSelect T="string" Label="Almacén" @bind-Value="pedido.ALMPCL" AnchorOrigin="Origin.BottomCenter" Required="true" Dense="true">
+                    @foreach (var alm in almacenesDisponibles)
+                    {
+                        <MudSelectItem Value="@alm.Codigo">@alm.Nombre</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="4">
+                <MudTextField T="double?" Label="Número #" Value="@pedido.CODPCL" ReadOnly="true" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Numbers" />
+            </MudItem>
+        </MudGrid>
+    </MudCard>
+
+    <MudText Typo="Typo.h6" Class="mb-2 font-weight-bold" Color="Color.Primary">Añadir Artículos</MudText>
+    <div class="d-flex align-end mb-4">
+        <MudAutocomplete T="Articulo" Label="Buscar Artículo" @bind-Value="articuloSeleccionado" SearchFunc="@BuscarArticulos" 
+                         ToStringFunc="@(a => a == null ? null : $"{a.Descripcion} - ${a.PrecioVenta}")" 
+                         ResetValueOnEmptyText="true" CoerceText="true" CoerceValue="true" Class="flex-grow-1" />
+        <MudNumericField @bind-Value="cantidadSeleccionada" Label="Cant." Variant="Variant.Outlined" Min="1" Class="ml-2" Style="max-width: 80px;" />
+        <MudIconButton Icon="@Icons.Material.Filled.Add" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Medium" Class="ml-2 mb-1" OnClick="AgregarLinea" />
+    </div>
+
+    @if (pedido.Lineas.Any())
+    {
+        <MudTable Items="@pedido.Lineas" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="1" Class="mb-4 rounded-lg">
+            <HeaderContent>
+                <MudTh>Artículo</MudTh>
+                <MudTh>Cant.</MudTh>
+                <MudTh>Total</MudTh>
+                <MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Artículo">@context.DESLPC</MudTd>
+                <MudTd DataLabel="Cant.">@context.CANLPC</MudTd>
+                <MudTd DataLabel="Total">@((context.TOTLPC ?? 0).ToString("N2"))</MudTd>
+                <MudTd>
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => EliminarLinea(context))" />
+                </MudTd>
+            </RowTemplate>
+            <FooterContent>
+                <td colspan="2" class="text-right pa-4"><MudText Typo="Typo.h6"><b>Total Pedido:</b></MudText></td>
+                <td class="pa-4"><MudText Typo="Typo.h6" Color="Color.Primary"><b>@pedido.Total.ToString("N2")</b></MudText></td>
+                <td></td>
+            </FooterContent>
+        </MudTable>
+
+        <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Large" FullWidth="true" OnClick="GuardarPedido" Disabled="guardando">
+            @if(guardando) { <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true"/> <MudText Class="ms-2">Guardando...</MudText> } else { <MudText>Guardar Pedido</MudText> }
+        </MudButton>
+    }
+}
+
+
+@code {
+    [SupplyParameterFromQuery(Name = "codcli")]
+    public string? CodigoClienteQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "nomcli")]
+    public string? NombreClienteQuery { get; set; }
+
+    private Pedido pedido = new Pedido { TIPPCL = "1" };
+    private Articulo? articuloSeleccionado;
+    private decimal cantidadSeleccionada = 1;
+    private bool guardando = false;
+    private List<string> seriesDisponibles = new();
+    private List<Almacen> almacenesDisponibles = new();
+    private Dictionary<string, TaxItemClient>? taxConfig;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrEmpty(CodigoClienteQuery))
+        {
+            pedido.CodigoCliente = CodigoClienteQuery;
+            pedido.NombreCliente = NombreClienteQuery ?? "";
+        }
+
+        try
+        {
+            seriesDisponibles = await Http.GetFromJsonAsync<List<string>>("api/pedidos/series") ?? new List<string> { "1" };
+            almacenesDisponibles = await Http.GetFromJsonAsync<List<Almacen>>("api/pedidos/almacenes") ?? new List<Almacen>();
+            taxConfig = await Http.GetFromJsonAsync<Dictionary<string, TaxItemClient>>("api/config/taxes");
+            
+            // Si venimos de la búsqueda, intentamos obtener los datos extras del cliente (como el Recargo)
+            if (!string.IsNullOrEmpty(pedido.CodigoCliente))
+            {
+                var clientes = await Http.GetFromJsonAsync<List<Cliente>>($"api/clientes?busqueda={pedido.CodigoCliente}");
+                var cli = clientes?.FirstOrDefault(c => c.Codigo == pedido.CodigoCliente);
+                if (cli != null) 
+                {
+                    pedido.REQCLI = cli.REQCLI;
+                    pedido.TARCLI = cli.TARCLI;
+                }
+            }
+
+            if (string.IsNullOrEmpty(pedido.ALMPCL) && almacenesDisponibles.Any())
+                pedido.ALMPCL = almacenesDisponibles.First().Codigo;
+
+            if (seriesDisponibles.Any())
+            {
+                pedido.TIPPCL = seriesDisponibles.First();
+                await CargarSiguienteNumero();
+            }
+        }
+        catch { 
+            seriesDisponibles = new List<string> { "1" }; 
+            almacenesDisponibles = new List<Almacen> { new Almacen { Codigo = "GEN", Nombre = "GENERAL" } };
+        }
+    }
+
+    private async Task OnSerieChanged(string nuevaSerie)
+    {
+        pedido.TIPPCL = nuevaSerie;
+        await CargarSiguienteNumero();
+    }
+
+    private async Task CargarSiguienteNumero()
+    {
+        try
+        {
+            pedido.CODPCL = await Http.GetFromJsonAsync<double>($"api/pedidos/siguiente?serie={pedido.TIPPCL}");
+        }
+        catch { pedido.CODPCL = 1; }
+    }
+
+    private async Task<IEnumerable<Articulo>> BuscarArticulos(string val, CancellationToken token)
+    {
+        if (string.IsNullOrEmpty(val) || val.Length < 2) return new List<Articulo>();
+        
+        // Pasamos la tarifa del pedido actual para obtener los precios correctos
+        int tar = (int)pedido.TARCLI;
+        if (tar == 0) tar = 1; // Default
+        
+        try
+        {
+            return await Http.GetFromJsonAsync<List<Articulo>>($"api/articulos?busqueda={val}&tarifa={tar}", token) ?? new List<Articulo>();
+        }
+        catch
+        {
+            return new List<Articulo>();
+        }
+    }
+
+    private void AgregarLinea()
+    {
+        if (articuloSeleccionado != null && cantidadSeleccionada > 0)
+        {
+            // Obtener IVA desde config dinámica
+            string idxKey = articuloSeleccionado.IvaIndex.ToString();
+            decimal ivaPorc = 21; // Default
+            if (taxConfig != null && taxConfig.ContainsKey(idxKey))
+            {
+                ivaPorc = taxConfig[idxKey].IVA;
+            }
+            
+            // Cálculo de base imponible (Factusol guarda bases en TOTLPC)
+            decimal totalLineaConIva = articuloSeleccionado.PrecioVenta * cantidadSeleccionada;
+            decimal baseImponible = Math.Round(totalLineaConIva / (1 + (ivaPorc / 100)), 2);
+
+            var nuevaLinea = new PedidoLinea
+            {
+                ARTLPC = articuloSeleccionado.Codigo,
+                DESLPC = articuloSeleccionado.Descripcion,
+                CANLPC = cantidadSeleccionada,
+                PRELPC = Math.Round(articuloSeleccionado.PrecioVenta / (1 + (ivaPorc / 100)), 2),
+                TOTLPC = baseImponible,
+                IVALPC = (double)ivaPorc,
+                IvaIndex = articuloSeleccionado.IvaIndex
+            };
+            
+            pedido.Lineas.Add(nuevaLinea);
+            articuloSeleccionado = null;
+            cantidadSeleccionada = 1;
+            ActualizarTotal();
+        }
+    }
+
+    private void EliminarLinea(PedidoLinea linea)
+    {
+        pedido.Lineas.Remove(linea);
+        ActualizarTotal();
+    }
+
+    private void ActualizarTotal()
+    {
+        decimal netoAcum = 0;
+        decimal ivaAcum = 0;
+        decimal reAcum = 0;
+
+        foreach (var l in pedido.Lineas)
+        {
+            decimal baseLin = l.TOTLPC ?? 0;
+            decimal ivaPct = (decimal)(l.IVALPC ?? 0);
+
+            netoAcum += baseLin;
+            ivaAcum += Math.Round(baseLin * (ivaPct / 100), 2);
+            
+            if (pedido.REQCLI == 1 && taxConfig != null)
+            {
+                string key = l.IvaIndex.ToString();
+                if (taxConfig.ContainsKey(key))
+                {
+                    decimal rePct = taxConfig[key].RE;
+                    reAcum += Math.Round(baseLin * (rePct / 100), 2);
+                }
+            }
+        }
+        
+        pedido.Total = netoAcum + ivaAcum + reAcum;
+    }
+
+    public class TaxItemClient { public decimal IVA { get; set; } public decimal RE { get; set; } }
+
+    private async Task GuardarPedido()
+    {
+        if (pedido.Lineas.Count == 0)
+        {
+            Snackbar.Add("Debe añadir al menos un artículo.", Severity.Warning);
+            return;
+        }
+
+        guardando = true;
+        try
+        {
+            var response = await Http.PostAsJsonAsync("api/pedidos", pedido);
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add("Pedido guardado exitosamente.", Severity.Success);
+                NavManager.NavigateTo("/pedidos");
+            }
+            else
+            {
+                var serverError = await response.Content.ReadAsStringAsync();
+                Snackbar.Add($"Error: {serverError}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+}

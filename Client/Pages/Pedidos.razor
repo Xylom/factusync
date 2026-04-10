@@ -1,0 +1,101 @@
+@page "/pedidos"
+@inject HttpClient Http
+
+<MudText Typo="Typo.h5" Class="mb-4 font-weight-bold" Color="Color.Primary">Historial de Mis Pedidos</MudText>
+
+<MudAlert Severity="Severity.Info" Variant="Variant.Filled" Class="mb-6 rounded-lg">
+    Esta sección muestra los pedidos que has generado hoy pendientes de sincronizar con la oficina central.
+</MudAlert>
+
+<MudTable Items="pedidos" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="2" Class="rounded-lg" OnRowClick="@VerDetalle" T="Pedido" RowStyle="cursor: pointer;" Loading="cargando">
+    <HeaderContent>
+        <MudTh>Fecha</MudTh>
+        <MudTh>Cliente</MudTh>
+        <MudTh>Total</MudTh>
+        <MudTh>Estado</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Fecha">@context.Fecha.ToShortDateString()</MudTd>
+        <MudTd DataLabel="Cliente">@context.CNOPCL</MudTd>
+        <MudTd DataLabel="Total"><MudText Color="Color.Primary" Class="font-weight-bold">@context.Total.ToString("N2")</MudText></MudTd>
+        <MudTd DataLabel="Estado">
+            <MudChip T="string" Color="Color.Info" Size="Size.Small">Pendiente</MudChip>
+        </MudTd>
+    </RowTemplate>
+</MudTable>
+
+<MudDialog @bind-Visible="_visible" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.Receipt" Class="mr-3"/> Vista Previa Pedido #@_selectedPedido?.CODPCL
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_selectedPedido != null)
+        {
+            <MudText Class="mb-2"><b>Cliente:</b> @_selectedPedido.CNOPCL</MudText>
+            <MudText Class="mb-4"><b>Fecha:</b> @_selectedPedido.Fecha.ToShortDateString()</MudText>
+            
+            <MudTable Items="_selectedLineas" Dense="true" Hover="true" Breakpoint="Breakpoint.None" Elevation="0">
+                <HeaderContent>
+                    <MudTh>Artículo</MudTh>
+                    <MudTh>Cant</MudTh>
+                    <MudTh>Total</MudTh>
+                </HeaderContent>
+                <RowTemplate Context="linea">
+                    <MudTd>@linea.DESLPC</MudTd>
+                    <MudTd>@linea.CANLPC</MudTd>
+                    <MudTd>@linea.TOTLPC?.ToString("N2")</MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="() => _visible = false" Class="px-10">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private bool _visible;
+    private Pedido? _selectedPedido;
+    private List<PedidoLinea> _selectedLineas = new();
+    private DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
+    private List<Pedido> pedidos = new();
+    private bool cargando = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPedidos();
+    }
+
+    private async Task LoadPedidos()
+    {
+        cargando = true;
+        try
+        {
+            pedidos = await Http.GetFromJsonAsync<List<Pedido>>("api/pedidos") ?? new();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error: {ex.Message}");
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+
+    private async Task VerDetalle(TableRowClickEventArgs<Pedido> args)
+    {
+        _selectedPedido = args.Item;
+        try 
+        {
+            _selectedLineas = await Http.GetFromJsonAsync<List<PedidoLinea>>($"api/pedidos/lineas?tip={_selectedPedido.TIPPCL}&cod={_selectedPedido.CODPCL}") ?? new();
+            _visible = true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error: {ex.Message}");
+        }
+    }
+}

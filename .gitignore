@@ -1,0 +1,12 @@
+[Bb]in/
+[Oo]bj/
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vscode/
+appsettings.Development.json
+dist/
+node_modules/

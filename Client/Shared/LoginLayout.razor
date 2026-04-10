@@ -1,0 +1,25 @@
+@inherits LayoutComponentBase
+@inject NavigationManager Navigation
+
+<MudThemeProvider Theme="FactuSyncTheme" />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudMainContent Class="pa-0 m-0 w-100 min-vh-100">
+        @Body
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    MudTheme FactuSyncTheme = new MudTheme()
+    {
+        PaletteLight = new PaletteLight()
+        {
+            Primary = Colors.Blue.Darken2,
+            Secondary = Colors.Teal.Accent4,
+            AppbarBackground = Colors.Blue.Darken2,
+            DrawerBackground = Colors.Gray.Lighten5
+        }
+    };
+}

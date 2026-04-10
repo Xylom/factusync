@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/Api/">
+    <Project Path="Api/FactuSync.Api.csproj" />
+  </Folder>
+  <Folder Name="/Client/">
+    <Project Path="Client/FactuSync.Client.csproj" />
+  </Folder>
+  <Folder Name="/Shared/">
+    <Project Path="Shared/FactuSync.Shared.csproj" />
+  </Folder>
+</Solution>
