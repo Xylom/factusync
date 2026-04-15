@@ -15,7 +15,7 @@ public interface IFactusolService
     Task<bool> UpdateDbPathAsync(string newPath, string masterPassword);
     bool ValidateMasterPassword(string password);
     string GetDbPath();
-    Task<List<Pedido>> GetPedidosAsync();
+    Task<List<Pedido>> GetPedidosAsync(DateTime? desde = null, DateTime? hasta = null, string? serie = null, double? agentId = null);
     Task<List<PedidoLinea>> GetPedidoLineasAsync(string tip, double cod);
     Task<(bool Success, string Message)> TestConnectionAsync();
     Task<List<string>> GetSeriesAsync();
@@ -52,30 +52,35 @@ public class FactusolService : IFactusolService
         {
             using var connection = new OleDbConnection(GetConnectionString());
             await connection.OpenAsync();
-            string query = "SELECT TIPPCL, CODPCL, FECPCL, CLIPCL, CNOPCL, NETPCL, TOTPCL, ALMPCL, FOPPCL, ESTPCL FROM F_PCL WHERE TIPPCL = ? AND CODPCL = ?";
+            
+            // Simplificamos la consulta para evitar columnas inexistentes en algunas versiones
+            string query = "SELECT TIPPCL, CODPCL, FECPCL, CLIPCL, CNOPCL, TOTPCL, ALMPCL, ESTPCL FROM F_PCL WHERE TIPPCL = ? AND CODPCL = ?";
             using var command = new OleDbCommand(query, connection);
-            command.Parameters.AddWithValue("?", serie);
-            command.Parameters.AddWithValue("?", numero);
+            command.Parameters.Add("?", OleDbType.VarWChar).Value = serie;
+            command.Parameters.Add("?", OleDbType.Double).Value = numero;
+            
             using var reader = await command.ExecuteReaderAsync();
             if (await reader.ReadAsync())
             {
                 var p = new Pedido
                 {
                     TIPPCL = reader["TIPPCL"].ToString() ?? "",
-                    CODPCL = Convert.ToDouble(reader["CODPCL"]),
-                    Fecha = Convert.ToDateTime(reader["FECPCL"]),
-                    CodigoCliente = reader["CLIPCL"].ToString() ?? "",
+                    CODPCL = reader["CODPCL"] != DBNull.Value ? Convert.ToDouble(reader["CODPCL"]) : 0,
+                    Fecha = reader["FECPCL"] != DBNull.Value ? Convert.ToDateTime(reader["FECPCL"]) : DateTime.Now,
+                    CLIPCL = reader["CLIPCL"] != DBNull.Value ? Convert.ToDouble(reader["CLIPCL"]) : 0,
                     CNOPCL = reader["CNOPCL"].ToString() ?? "",
                     ALMPCL = reader["ALMPCL"].ToString() ?? "",
-                    FOPPCL = reader["FOPPCL"].ToString() ?? "",
                     ESTPCL = reader["ESTPCL"] != DBNull.Value ? Convert.ToInt32(reader["ESTPCL"]) : 0,
-                    Total = reader["TOTPCL"] != DBNull.Value ? Convert.ToDecimal(reader["TOTPCL"]) : 0
+                    TOTPCL = reader["TOTPCL"] != DBNull.Value ? Convert.ToDecimal(reader["TOTPCL"]) : 0
                 };
                 p.Lineas = await GetPedidoLineasAsync(serie, numero);
                 return p;
             }
         }
-        catch (Exception ex) { Console.WriteLine($"Error GetPedido: {ex.Message}"); }
+        catch (Exception ex) 
+        { 
+            Console.WriteLine($"[DB ERROR] Error en GetPedidoAsync ({serie}-{numero}): {ex.Message}"); 
+        }
         return null;
     }
 
@@ -373,7 +378,8 @@ public class FactusolService : IFactusolService
 
         return articulos;
     }
-    public async Task<List<Pedido>> GetPedidosAsync()
+
+    public async Task<List<Pedido>> GetPedidosAsync(DateTime? desde = null, DateTime? hasta = null, string? serie = null, double? agentId = null)
     {
         var pedidos = new List<Pedido>();
         try
@@ -381,20 +387,51 @@ public class FactusolService : IFactusolService
             using var connection = new OleDbConnection(GetConnectionString());
             await connection.OpenAsync();
             
-            // Traemos los pedidos recientes para sincronización y estadísticas
-            string query = "SELECT TIPPCL, CODPCL, FECPCL, CNOPCL, TOTPCL, CLIPCL FROM F_PCL ORDER BY FECPCL DESC, CODPCL DESC";
+            var conditions = new List<string>();
+            var parameters = new List<(string, object)>();
+
+            string query = "SELECT TIPPCL, CODPCL, FECPCL, CLIPCL, CNOPCL, TOTPCL, ESTPCL FROM F_PCL";
+
+            if (desde.HasValue) {
+                conditions.Add("FECPCL >= ?");
+                parameters.Add(("?", desde.Value.Date));
+            }
+            if (hasta.HasValue) {
+                conditions.Add("FECPCL <= ?");
+                parameters.Add(("?", hasta.Value.Date));
+            }
+            if (!string.IsNullOrEmpty(serie)) {
+                conditions.Add("TIPPCL = ?");
+                parameters.Add(("?", serie));
+            }
+            if (agentId.HasValue) {
+                conditions.Add("AGEPCL = ?");
+                parameters.Add(("?", agentId.Value));
+            }
+
+            if (conditions.Any()) {
+                query += " WHERE " + string.Join(" AND ", conditions);
+            }
             
+            query += " ORDER BY FECPCL DESC, CODPCL DESC";
+
             using var command = new OleDbCommand(query, connection);
+            foreach (var p in parameters) {
+                var param = command.Parameters.AddWithValue(p.Item1, p.Item2);
+                if (p.Item2 is DateTime) param.OleDbType = OleDbType.DBDate;
+            }
+            
             using var reader = await command.ExecuteReaderAsync();
             while (await reader.ReadAsync())
             {
                 pedidos.Add(new Pedido
                 {
-                    TIPPCL = reader["TIPPCL"].ToString() ?? "1",
-                    CODPCL = Convert.ToDouble(reader["CODPCL"]),
-                    FECPCL = reader["FECPCL"] != DBNull.Value ? Convert.ToDateTime(reader["FECPCL"]) : DateTime.Now,
+                    TIPPCL = reader["TIPPCL"].ToString() ?? "",
+                    CODPCL = reader["CODPCL"] != DBNull.Value ? Convert.ToDouble(reader["CODPCL"]) : 0,
+                    Fecha = reader["FECPCL"] != DBNull.Value ? Convert.ToDateTime(reader["FECPCL"]) : DateTime.Now,
                     CNOPCL = reader["CNOPCL"].ToString() ?? "",
                     TOTPCL = reader["TOTPCL"] != DBNull.Value ? Convert.ToDecimal(reader["TOTPCL"]) : 0,
+                    ESTPCL = reader["ESTPCL"] != DBNull.Value ? Convert.ToInt32(reader["ESTPCL"]) : 0,
                     CLIPCL = reader["CLIPCL"] != DBNull.Value ? Convert.ToDouble(reader["CLIPCL"]) : null
                 });
             }
@@ -416,8 +453,8 @@ public class FactusolService : IFactusolService
             
             string query = "SELECT ARTLPC, DESLPC, CANLPC, PRELPC, TOTLPC FROM F_LPC WHERE TIPLPC = ? AND CODLPC = ? ORDER BY POSLPC ASC";
             using var command = new OleDbCommand(query, connection);
-            command.Parameters.AddWithValue("?", tip);
-            command.Parameters.AddWithValue("?", cod);
+            command.Parameters.Add("?", OleDbType.VarWChar).Value = tip;
+            command.Parameters.Add("?", OleDbType.Double).Value = cod;
             
             using var reader = await command.ExecuteReaderAsync();
             while (await reader.ReadAsync())
@@ -558,8 +595,8 @@ public class FactusolService : IFactusolService
                                  NET1PCL, NET2PCL, NET3PCL, BAS1PCL, BAS2PCL, BAS3PCL,
                                  PIVA1PCL, PIVA2PCL, PIVA3PCL, IIVA1PCL, IIVA2PCL, IIVA3PCL, 
                                  PREC1PCL, PREC2PCL, PREC3PCL, IREC1PCL, IREC2PCL, IREC3PCL, 
-                                  REQPCL, ESTPCL, CDOPCL, CPOPCL, CCPPCL, CPRPCL, CNIPCL, FOPPCL) 
-                                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                                  REQPCL, ESTPCL, AGEPCL, CDOPCL, CPOPCL, CCPPCL, CPRPCL, CNIPCL, FOPPCL) 
+                                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
                 using var cmdCab = new OleDbCommand(sqlCab, connection, transaction);
                 cmdCab.Parameters.Add("?", OleDbType.VarWChar).Value = pedido.TIPPCL ?? "1";
@@ -581,7 +618,7 @@ public class FactusolService : IFactusolService
                 cmdCab.Parameters.Add("?", OleDbType.Double).Value = (double)pctIVA1; // PIVA
                 cmdCab.Parameters.Add("?", OleDbType.Double).Value = (double)pctIVA2;
                 cmdCab.Parameters.Add("?", OleDbType.Double).Value = (double)pctIVA3;
-
+                
                 cmdCab.Parameters.Add("?", OleDbType.Currency).Value = iva1; // IIVA
                 cmdCab.Parameters.Add("?", OleDbType.Currency).Value = iva2;
                 cmdCab.Parameters.Add("?", OleDbType.Currency).Value = iva3;
@@ -589,13 +626,14 @@ public class FactusolService : IFactusolService
                 cmdCab.Parameters.Add("?", OleDbType.Double).Value = (double)pctRE1; // PREC
                 cmdCab.Parameters.Add("?", OleDbType.Double).Value = (double)pctRE2;
                 cmdCab.Parameters.Add("?", OleDbType.Double).Value = (double)pctRE3;
-
+                
                 cmdCab.Parameters.Add("?", OleDbType.Currency).Value = re1; // IREC
                 cmdCab.Parameters.Add("?", OleDbType.Currency).Value = re2;
                 cmdCab.Parameters.Add("?", OleDbType.Currency).Value = re3;
                 
                 cmdCab.Parameters.Add("?", OleDbType.Double).Value = (double)pedido.REQCLI;
                 cmdCab.Parameters.Add("?", OleDbType.Double).Value = 0; // 0 = Pendiente
+                cmdCab.Parameters.Add("?", OleDbType.Double).Value = pedido.AGEPCL ?? 0; // Agente
                 
                 cmdCab.Parameters.Add("?", OleDbType.VarWChar).Value = cdo;
                 cmdCab.Parameters.Add("?", OleDbType.VarWChar).Value = cpo;

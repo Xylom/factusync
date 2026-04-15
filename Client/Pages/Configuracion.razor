@@ -116,6 +116,8 @@
                                 <MudTh>Comercial</MudTh>
                                 <MudTh>Acceso</MudTh>
                                 <MudTh>Dtos.</MudTh>
+                                <MudTh>Elim.</MudTh>
+                                <MudTh>Ver</MudTh>
                                 <MudTh>Serie</MudTh>
                             </HeaderContent>
                             <RowTemplate Context="ag">
@@ -129,16 +131,28 @@
                                     </div>
                                 </MudTd>
                                 <MudTd>
-                                    <MudCheckBox T="bool" 
+                                    <MudCheckBox T="bool" ToolTip="Permite iniciar sesión en la App"
                                                  Value="@GetPerm(ag.CODAGE).AccesoMovil" 
                                                  ValueChanged="@((bool v) => UpdatePerm(ag.CODAGE, p => p.AccesoMovil = v))"
                                                  Color="Color.Primary" Dense="true" />
                                 </MudTd>
                                 <MudTd>
-                                    <MudCheckBox T="bool" 
+                                    <MudCheckBox T="bool" ToolTip="Permite modificar descuentos en líneas"
                                                  Value="@GetPerm(ag.CODAGE).PermitirDescuentos" 
                                                  ValueChanged="@((bool v) => UpdatePerm(ag.CODAGE, p => p.PermitirDescuentos = v))"
                                                  Color="Color.Primary" Dense="true" />
+                                </MudTd>
+                                <MudTd>
+                                    <MudCheckBox T="bool" ToolTip="Permite borrar pedidos del sistema"
+                                                 Value="@GetPerm(ag.CODAGE).PermitirEliminar" 
+                                                 ValueChanged="@((bool v) => UpdatePerm(ag.CODAGE, p => p.PermitirEliminar = v))"
+                                                 Color="Color.Error" Dense="true" />
+                                </MudTd>
+                                <MudTd>
+                                    <MudCheckBox T="bool" ToolTip="Solo ver pedidos propios (No el de otros agentes)"
+                                                 Value="@GetPerm(ag.CODAGE).SoloVerPedidosPropios" 
+                                                 ValueChanged="@((bool v) => UpdatePerm(ag.CODAGE, p => p.SoloVerPedidosPropios = v))"
+                                                 Color="Color.Warning" Dense="true" />
                                 </MudTd>
                                 <MudTd>
                                     <MudSelect T="string" 
@@ -153,6 +167,27 @@
                                 </MudTd>
                             </RowTemplate>
                         </MudTable>
+
+                        <div class="mt-6 pa-4 rounded-lg" style="background-color: #f8f9fa; border: 1px dashed #dee2e6;">
+                            <MudText Typo="Typo.subtitle2" Class="font-weight-bold mb-2">Guía de Permisos:</MudText>
+                            <MudGrid Spacing="1">
+                                <MudItem xs="12" sm="6" md="4">
+                                    <MudText Typo="Typo.caption" Style="color: #495057;"><b>Acceso:</b> Iniciar sesión en la App.</MudText>
+                                </MudItem>
+                                <MudItem xs="12" sm="6" md="4">
+                                    <MudText Typo="Typo.caption" Style="color: #495057;"><b>Dtos:</b> Aplicar descuentos por línea.</MudText>
+                                </MudItem>
+                                <MudItem xs="12" sm="6" md="4">
+                                    <MudText Typo="Typo.caption" Style="color: #495057;"><b>Elim:</b> Borrar pedidos del sistema.</MudText>
+                                </MudItem>
+                                <MudItem xs="12" sm="6" md="4">
+                                    <MudText Typo="Typo.caption" Style="color: #495057;"><b>Ver:</b> Si está marcado, SOLO ve sus propios pedidos.</MudText>
+                                </MudItem>
+                                <MudItem xs="12" sm="6" md="4">
+                                    <MudText Typo="Typo.caption" Style="color: #495057;"><b>Serie:</b> Serie por defecto para nuevos pedidos.</MudText>
+                                </MudItem>
+                            </MudGrid>
+                        </div>
                     }
                 </MudPaper>
             </MudTabPanel>

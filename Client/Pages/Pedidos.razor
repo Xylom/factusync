@@ -18,12 +18,55 @@
 
     <!-- Search & Filter Bar -->
     <div class="d-flex gap-2 mb-6 align-center">
-        <MudPaper Elevation="0" Class="flex-grow-1 pa-2 rounded-lg d-flex align-center" Style="background-color: #e9ecef; border: 1px solid #dee2e6;">
+        <MudPaper Elevation="0" Class="flex-grow-1 pa-1 rounded-lg d-flex align-center" Style="background-color: white; border: 1px solid #dee2e6;">
             <MudIcon Icon="@Icons.Material.Filled.Search" Class="mx-2" Style="color: #adb5bd;" />
-            <MudTextField @bind-Value="busqueda" Placeholder="Buscar pedido o cliente..." Variant="Variant.Text" Margin="Margin.Dense" Class="flex-grow-1" DisableUnderLine="true" />
+            <MudTextField @bind-Value="busqueda" Placeholder="Buscar pedido o cliente..." Variant="Variant.Text" Margin="Margin.Dense" Class="flex-grow-1" DisableUnderLine="true" Immediate="true" />
         </MudPaper>
-        <MudIconButton Icon="@Icons.Material.Filled.FilterList" Variant="Variant.Filled" Style="background-color: #e9ecef; color: #495057; height: 48px; width: 48px;" Class="rounded-lg shadow-none" />
+        <MudIconButton Icon="@Icons.Material.Filled.FilterList" Variant="Variant.Filled" 
+                       Class="rounded-lg shadow-none"
+                       Style="@($"background-color: {(mostrarFiltros ? "#0D47A1" : "#e9ecef")}; color: {(mostrarFiltros ? "white" : "#495057")}; height: 48px; width: 48px;")"
+                       OnClick="@(() => mostrarFiltros = !mostrarFiltros)" />
     </div>
+
+    <!-- Panel de Filtros Avanzados -->
+    <MudCollapse Expanded="mostrarFiltros" Class="mb-6">
+        <MudPaper Elevation="0" Class="pa-4 rounded-xl border border-solid" Style="border-color: #dee2e6; background-color: #fdfdfd;">
+            <MudGrid Spacing="2" Justify="Justify.FlexStart" Class="align-end">
+                <MudItem xs="12" sm="6" md="4">
+                    <MudDateRangePicker @bind-DateRange="_dateRange" Label="Rango de Fechas" 
+                                       PlaceholderStart="Desde" PlaceholderEnd="Hasta" 
+                                       Variant="Variant.Outlined" Margin="Margin.Dense" Color="Color.Primary" />
+                </MudItem>
+                <MudItem xs="6" sm="3" md="2">
+                    <MudSelect T="string" Label="Serie" @bind-Value="filtroSerie" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                        @for(int i=1; i<=9; i++) {
+                            var serieVal = i.ToString();
+                            <MudSelectItem Value="@serieVal">Serie @serieVal</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                @if (isBoss)
+                {
+                    <MudItem xs="6" sm="3" md="3">
+                        <MudSelect T="double?" Label="Comercial" @bind-Value="filtroAgente" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                            <MudSelectItem T="double?" Value="null">Todos</MudSelectItem>
+                            @if (agentes != null) {
+                                @foreach (var ag in agentes) {
+                                    <MudSelectItem T="double?" Value="ag.CODAGE">@ag.NOMAGE</MudSelectItem>
+                                }
+                            }
+                        </MudSelect>
+                    </MudItem>
+                }
+                <MudItem xs="12" sm="12" md="3">
+                    <div class="d-flex gap-2">
+                         <MudButton OnClick="LoadPedidos" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh" FullWidth="true" Class="rounded-lg py-2">Filtrar</MudButton>
+                         <MudIconButton OnClick="LimpiarFiltros" Icon="@Icons.Material.Filled.LayersClear" Color="Color.Default" Class="rounded-lg border border-solid" Style="border-color: #dee2e6;" />
+                    </div>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    </MudCollapse>
 
     <!-- Summary Stats Strip (Horizontal) -->
     <div class="d-flex overflow-x-auto gap-3 pb-4 no-scrollbar mb-6">
@@ -139,7 +182,9 @@
         }
     </DialogContent>
     <DialogActions>
-        <MudButton Variant="Variant.Text" Color="Color.Error" OnClick="@(() => ConfirmarEliminarDirecto(_selectedPedido))" Class="mr-auto">Eliminar</MudButton>
+        <MudButton Variant="Variant.Text" Color="Color.Error" 
+                   Disabled="!canDelete"
+                   OnClick="@(() => ConfirmarEliminarDirecto(_selectedPedido))" Class="mr-auto">Eliminar</MudButton>
         <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="@(() => EditarPedido(_selectedPedido))">Editar</MudButton>
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="() => _visible = false" Class="px-10">Cerrar</MudButton>
     </DialogActions>
@@ -158,8 +203,17 @@
 
 @code {
     private List<Pedido> pedidos = new();
+    private List<Agente>? agentes;
     private bool cargando = true;
+    private bool isBoss = false;
+    private bool mostrarFiltros = false;
     private string busqueda = "";
+    
+    // Filtros
+    private DateRange _dateRange = new DateRange(DateTime.Now.AddMonths(-1).Date, DateTime.Now.Date);
+    private string? filtroSerie;
+    private double? filtroAgente;
+
     private decimal ventasMensuales = 0;
     private decimal promedioPedido = 0;
     private decimal totalHoy = 0;
@@ -170,23 +224,88 @@
     private List<PedidoLinea> _selectedLineas = new();
     private DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
     private MudMessageBox? mbox;
+    private bool canDelete = false;
 
     private IEnumerable<Pedido> pedidosFiltrados => pedidos
         .Where(p => string.IsNullOrEmpty(busqueda) || (p.NombreCliente?.Contains(busqueda, StringComparison.OrdinalIgnoreCase) ?? false) || p.CODPCL.ToString().Contains(busqueda));
 
     protected override async Task OnInitializedAsync()
     {
+        var boss = await JS.InvokeAsync<string?>("sessionStorage.getItem", "is_boss");
+        isBoss = boss == "1";
+        
+        if(isBoss)
+           agentes = await Http.GetFromJsonAsync<List<Agente>>("/api/agentes");
+
         await LoadPedidos();
+        await CargarPermisos();
+    }
+
+    private async Task CargarPermisos()
+    {
+        try {
+            var config = await Http.GetFromJsonAsync<GlobalConfig>("/api/config/global");
+            var seller_id = await JS.InvokeAsync<string?>("sessionStorage.getItem", "seller_id");
+            
+            if (isBoss) {
+                canDelete = true;
+                return;
+            }
+
+            if (config != null && !string.IsNullOrEmpty(seller_id)) {
+                if (config.OrderSettings.PermisosAgentes.TryGetValue(seller_id, out var perm)) {
+                    canDelete = perm.PermitirEliminar;
+                }
+            }
+        } catch { }
     }
 
     private async Task LoadPedidos()
     {
         cargando = true;
         try {
-            pedidos = await Http.GetFromJsonAsync<List<Pedido>>("api/pedidos") ?? new();
+            var config = await Http.GetFromJsonAsync<GlobalConfig>("/api/config/global");
+            string? s_id = await JS.InvokeAsync<string?>("sessionStorage.getItem", "seller_id");
+            
+            bool restricted = false;
+            if (config != null && !string.IsNullOrEmpty(s_id))
+            {
+                if (config.OrderSettings.PermisosAgentes.TryGetValue(s_id, out var p))
+                    restricted = p.SoloVerPedidosPropios;
+            }
+
+            // Construir URL con filtros
+            var query = new List<string>();
+            
+            if (_dateRange.Start.HasValue) 
+                query.Add($"desde={_dateRange.Start.Value:yyyy-MM-dd}");
+            if (_dateRange.End.HasValue) 
+                query.Add($"hasta={_dateRange.End.Value:yyyy-MM-dd}");
+            if (!string.IsNullOrEmpty(filtroSerie))
+                query.Add($"serie={filtroSerie}");
+
+            // Lógica de Agente: 
+            if (isBoss && filtroAgente.HasValue) {
+                query.Add($"agentId={filtroAgente}");
+            } else if (!isBoss && restricted && !string.IsNullOrEmpty(s_id)) {
+                query.Add($"agentId={s_id}");
+            }
+
+            string url = "/api/pedidos";
+            if (query.Any()) url += "?" + string.Join("&", query);
+
+            pedidos = await Http.GetFromJsonAsync<List<Pedido>>(url) ?? new();
             CalcularMetricas();
         } catch { }
         finally { cargando = false; }
+    }
+
+    private void LimpiarFiltros()
+    {
+        _dateRange = new DateRange(DateTime.Now.AddMonths(-1).Date, DateTime.Now.Date);
+        filtroSerie = null;
+        filtroAgente = null;
+        _ = LoadPedidos();
     }
 
     private void CalcularMetricas()

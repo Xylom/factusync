@@ -78,17 +78,8 @@ api.MapPost("/settings/dbpath", async (IFactusolService service, FactuSync.Share
     return Results.BadRequest(new { message = "Contraseña maestra incorrecta o ruta inválida" });
 });
 
-api.MapGet("/pedidos", async (IFactusolService service) => 
-    await service.GetPedidosAsync());
-
 api.MapGet("/pedidos/lineas", async (IFactusolService service, string tip, double cod) => 
     await service.GetPedidoLineasAsync(tip, cod));
-
-api.MapGet("/pedidos/series", async (IFactusolService service) => 
-    await service.GetSeriesAsync());
-
-api.MapGet("/pedidos/siguiente", async (IFactusolService service, string serie) => 
-    await service.GetSiguientePedidoAsync(serie));
 
 api.MapGet("/articulos/imagen", (string path, IFactusolService service) => 
 {
@@ -118,6 +109,8 @@ api.MapGet("/articulos/imagen", (string path, IFactusolService service) =>
     return Results.NotFound();
 });
 
+api.MapGet("/pedidos", async (IFactusolService service, DateTime? desde, DateTime? hasta, string? serie, double? agentId) => 
+    Results.Ok(await service.GetPedidosAsync(desde, hasta, serie, agentId)));
 api.MapGet("/pedidos/series", async (IFactusolService service) => Results.Ok(await service.GetSeriesAsync()));
 api.MapGet("/pedidos/siguiente", async (IFactusolService service, string serie) => Results.Ok(await service.GetSiguientePedidoAsync(serie)));
 api.MapGet("/pedidos/almacenes", async (IFactusolService service) => Results.Ok(await service.GetAlmacenesAsync()));

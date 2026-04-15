@@ -655,6 +655,8 @@ namespace FactuSync.Shared
     {
         public bool AccesoMovil { get; set; } = true;
         public bool PermitirDescuentos { get; set; } = true;
+        public bool PermitirEliminar { get; set; } = false;
+        public bool SoloVerPedidosPropios { get; set; } = false; // Nueva restricción
         public string SeriePorDefecto { get; set; } = "1";
     }
 
