@@ -2,32 +2,46 @@
 @inject HttpClient Http
 @inject ISnackbar Snackbar
 @inject NavigationManager NavManager
+@inject IJSRuntime JS
 @using FactuSync.Shared
 
 <MudText Typo="Typo.h5" Class="mb-4 font-weight-bold" Color="Color.Primary">Crear Nuevo Pedido</MudText>
 
-@if (string.IsNullOrEmpty(pedido.CodigoCliente))
+    <MudCard Class="mb-2 pa-2 elevation-1 rounded-lg">
+        <MudAutocomplete T="Cliente" Label="Cliente" 
+                         Value="clienteSeleccionado" 
+                         ValueChanged="OnClienteSeleccionado"
+                         SearchFunc="@BuscarClientes"
+                         ToStringFunc="@(c => c == null ? "" : $"{c.Codigo} - {c.Nombre}")"
+                         ResetValueOnEmptyText="true" CoerceText="true" CoerceValue="true" 
+                         Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                         AdornmentIcon="@Icons.Material.Filled.Search"
+                         Placeholder="Buscar..." />
+    </MudCard>
+
+@if (!string.IsNullOrEmpty(pedido.CodigoCliente))
 {
-    <MudAlert Severity="Severity.Warning" Class="mb-4">Por favor, seleccione un cliente primero desde la pantalla de clientes.</MudAlert>
-    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => NavManager.NavigateTo("/clientes"))">Ir a Clientes</MudButton>
-}
-else
-{
-    <MudCard Class="mb-4 pa-4 elevation-2 rounded-lg">
-        <MudText Typo="Typo.h6" Color="Color.Primary"><b>@pedido.NombreCliente</b></MudText>
-        <MudText Typo="Typo.body2" Color="Color.Secondary">Código: @pedido.CodigoCliente</MudText>
+    <MudCard Class="mb-3 pa-2 elevation-1 rounded-lg border-l-4 border-solid" Style="border-color: var(--mud-palette-primary); background-color: var(--mud-palette-background-grey);">
+        <div class="d-flex justify-space-between align-center mb-1">
+            <MudText Typo="Typo.subtitle2" Color="Color.Primary" Class="font-weight-bold">@pedido.NombreCliente (@pedido.CodigoCliente)</MudText>
+            <MudIconButton Icon="@Icons.Material.Filled.ShoppingCart" Color="Color.Primary" Size="Size.Small" OnClick="@(() => cartOpen = true)">
+                <MudBadge Content="@pedido.Lineas.Count" Color="Color.Error" Overlap="true" Bordered="true">
+                    <MudIcon Icon="@Icons.Material.Filled.ShoppingCart" />
+                </MudBadge>
+            </MudIconButton>
+        </div>
         
-        <MudGrid Class="mt-2">
+        <MudGrid Spacing="1">
             <MudItem xs="4">
-                <MudSelect T="string" Label="Serie" Value="@pedido.TIPPCL" ValueChanged="OnSerieChanged" AnchorOrigin="Origin.BottomCenter" Required="true" Dense="true">
+                <MudSelect T="string" Label="Serie" Value="@pedido.TIPPCL" ValueChanged="OnSerieChanged" AnchorOrigin="Origin.BottomCenter" Required="true" Dense="true" Margin="Margin.Dense" Variant="Variant.Text">
                     @foreach (var s in seriesDisponibles)
                     {
-                        <MudSelectItem Value="@s">Serie @s</MudSelectItem>
+                        <MudSelectItem Value="@s">S-@s</MudSelectItem>
                     }
                 </MudSelect>
             </MudItem>
             <MudItem xs="4">
-                <MudSelect T="string" Label="Almacén" @bind-Value="pedido.ALMPCL" AnchorOrigin="Origin.BottomCenter" Required="true" Dense="true">
+                <MudSelect T="string" @bind-Value="pedido.ALMPCL" Label="Alm." AnchorOrigin="Origin.BottomCenter" Required="true" Dense="true" Margin="Margin.Dense" Variant="Variant.Text">
                     @foreach (var alm in almacenesDisponibles)
                     {
                         <MudSelectItem Value="@alm.Codigo">@alm.Nombre</MudSelectItem>
@@ -35,53 +49,86 @@ else
                 </MudSelect>
             </MudItem>
             <MudItem xs="4">
-                <MudTextField T="double?" Label="Número #" Value="@pedido.CODPCL" ReadOnly="true" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Numbers" />
+                <MudTextField T="double?" Label="Nº #" Value="@pedido.CODPCL" ReadOnly="true" Margin="Margin.Dense" Variant="Variant.Text" />
             </MudItem>
         </MudGrid>
     </MudCard>
 
-    <MudText Typo="Typo.h6" Class="mb-2 font-weight-bold" Color="Color.Primary">Añadir Artículos (v1.1)</MudText>
-    <div class="d-flex align-end mb-4">
-        <MudAutocomplete T="Articulo" Label="Buscar Artículo" @bind-Value="articuloSeleccionado" SearchFunc="@BuscarArticulos" 
-                         ToStringFunc="@(a => a?.DisplayText)" 
-                         ResetValueOnEmptyText="true" CoerceText="true" CoerceValue="true" Class="flex-grow-1" />
-        <MudNumericField @bind-Value="cantidadSeleccionada" Label="Cant." Variant="Variant.Outlined" Min="0.001M" Class="ml-2" Style="max-width: 70px;" />
-        <MudNumericField @bind-Value="descuentoSeleccionado" Label="Dto%" Variant="Variant.Outlined" Min="0" Max="100" Class="ml-2" Style="max-width: 70px;" />
-        <MudIconButton Icon="@Icons.Material.Filled.Add" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Medium" Class="ml-2 mb-1" OnClick="AgregarLinea" />
+    <div class="pa-2 rounded-lg elevation-1 bg-white mb-4">
+        <MudText Typo="Typo.subtitle2" Class="mb-2 font-weight-bold" Color="Color.Primary">Añadir Artículo</MudText>
+        <MudGrid Spacing="1" Class="align-end">
+            <MudItem xs="12" sm="6">
+                <MudAutocomplete T="Articulo" Label="Artículo" @bind-Value="articuloSeleccionado" SearchFunc="@BuscarArticulos" 
+                                 ToStringFunc="@(a => a?.DisplayText)" 
+                                 ResetValueOnEmptyText="true" CoerceText="true" CoerceValue="true" 
+                                 Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="4" sm="2">
+                <MudNumericField @bind-Value="cantidadSeleccionada" Label="Cant." Variant="Variant.Outlined" Margin="Margin.Dense" Min="0.001M" />
+            </MudItem>
+            <MudItem xs="4" sm="2">
+                <MudNumericField @bind-Value="descuentoSeleccionado" Label="Dto%" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0" Max="100" Disabled="!agentCanDiscount" />
+            </MudItem>
+            <MudItem xs="4" sm="2">
+                <MudButton EndIcon="@Icons.Material.Filled.Add" Color="Color.Primary" Variant="Variant.Filled" FullWidth="true" OnClick="AgregarLinea" Style="height: 40px;">Add</MudButton>
+            </MudItem>
+        </MudGrid>
     </div>
 
-    @if (pedido.Lineas.Any())
-    {
-        <MudTable Items="@pedido.Lineas" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="1" Class="mb-4 rounded-lg">
-            <HeaderContent>
-                <MudTh>Artículo</MudTh>
-                <MudTh>Cant.</MudTh>
-                <MudTh>Precio</MudTh>
-                <MudTh>Dto %</MudTh>
-                <MudTh>Total</MudTh>
-                <MudTh></MudTh>
-            </HeaderContent>
-            <RowTemplate>
-                <MudTd DataLabel="Artículo">@context.DESLPC</MudTd>
-                <MudTd DataLabel="Cant.">@context.CANLPC</MudTd>
-                <MudTd DataLabel="Precio">@((context.PRELPC ?? 0).ToString("N2"))</MudTd>
-                <MudTd DataLabel="Dto">@((context.DT1LPC ?? 0).ToString("N1"))%</MudTd>
-                <MudTd DataLabel="Total">@((context.TOTLPC ?? 0).ToString("N2"))</MudTd>
-                <MudTd>
-                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => EliminarLinea(context))" />
-                </MudTd>
-            </RowTemplate>
-            <FooterContent>
-                <td colspan="2" class="text-right pa-4"><MudText Typo="Typo.h6"><b>Total Pedido:</b></MudText></td>
-                <td class="pa-4"><MudText Typo="Typo.h6" Color="Color.Primary"><b>@pedido.Total.ToString("N2")</b></MudText></td>
-                <td></td>
-            </FooterContent>
-        </MudTable>
+    <!-- Barra Inferior de Total / Carrito (Sticky) -->
+    <div style="position: sticky; bottom: 10px; z-index: 100;" class="mt-4">
+        <MudPaper Elevation="4" Class="pa-3 rounded-pill bg-primary d-flex justify-space-between align-center text-white" @onclick="@(() => cartOpen = true)" Style="cursor:pointer;">
+            <div class="d-flex align-center">
+                <MudIcon Icon="@Icons.Material.Filled.ShoppingCart" Class="mr-2" />
+                <MudText Typo="Typo.button"><b>@pedido.Lineas.Count Ítems</b></MudText>
+            </div>
+            <div class="d-flex align-center">
+                <MudText Typo="Typo.h6" Class="mr-4"><b>€ @pedido.Total.ToString("N2")</b></MudText>
+                <MudIcon Icon="@Icons.Material.Filled.KeyboardArrowUp" />
+            </div>
+        </MudPaper>
+    </div>
 
-        <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Large" FullWidth="true" OnClick="GuardarPedido" Disabled="guardando">
-            @if(guardando) { <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true"/> <MudText Class="ms-2">Guardando...</MudText> } else { <MudText>Guardar Pedido</MudText> }
-        </MudButton>
-    }
+    <!-- Cajón del Carrito (Cart Mode) -->
+    <MudDrawer @bind-Open="@cartOpen" Anchor="Anchor.Bottom" Height="70vh" Elevation="1" Variant="@DrawerVariant.Temporary" Class="rounded-t-xl pa-4">
+        <MudDrawerHeader>
+            <MudText Typo="Typo.h6" Color="Color.Primary"><b>Resumen del Pedido</b></MudText>
+            <MudSpacer />
+            <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="@(() => cartOpen = false)" />
+        </MudDrawerHeader>
+        <div style="overflow-y: auto; height: calc(100% - 120px);">
+            @if (!pedido.Lineas.Any())
+            {
+                <MudText Align="Align.Center" Class="mt-10" Color="Color.Secondary">El carrito está vacío</MudText>
+            }
+            else
+            {
+                @foreach (var lin in pedido.Lineas)
+                {
+                    <div class="d-flex justify-space-between align-center pa-2 border-b">
+                        <div style="max-width: 70%;">
+                            <MudText Typo="Typo.body2" Class="font-weight-bold">@lin.DESLPC</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@lin.CANLPC x @((lin.PRELPC ?? 0).ToString("N2")) (Dto @lin.DT1LPC%)</MudText>
+                        </div>
+                        <div class="d-flex align-center">
+                            <MudText Typo="Typo.body2" Class="mr-2"><b>@((lin.TOTLPC ?? 0).ToString("N2"))</b></MudText>
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => EliminarLinea(lin))" />
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+        <div class="mt-4">
+            <div class="d-flex justify-space-between mb-4 px-2">
+                <MudText Typo="Typo.h6">Total:</MudText>
+                <MudText Typo="Typo.h6" Color="Color.Primary"><b>€ @pedido.Total.ToString("N2")</b></MudText>
+            </div>
+            <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Large" FullWidth="true" OnClick="GuardarPedido" Disabled="guardando || !pedido.Lineas.Any()">
+                @if(guardando) { <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true"/> <MudText Class="ms-2">Guardando...</MudText> } else { <MudText>Confirmar y Enviar Pedido</MudText> }
+            </MudButton>
+        </div>
+    </MudDrawer>
+}
 }
 
 
@@ -92,73 +139,152 @@ else
     [SupplyParameterFromQuery(Name = "nomcli")]
     public string? NombreClienteQuery { get; set; }
 
+    [SupplyParameterFromQuery(Name = "edit")]
+    public bool EditMode { get; set; }
+
+    [SupplyParameterFromQuery(Name = "serie")]
+    public string? SerieEdit { get; set; }
+
+    [SupplyParameterFromQuery(Name = "numero")]
+    public double? NumeroEdit { get; set; }
+
     private Pedido pedido = new Pedido { TIPPCL = "1" };
+    private Cliente? clienteSeleccionado;
     private Articulo? articuloSeleccionado;
     private decimal cantidadSeleccionada = 1;
     private decimal descuentoSeleccionado = 0;
+    private bool agentCanDiscount = true;
     private bool guardando = false;
+    private bool cartOpen = false;
     private List<string> seriesDisponibles = new();
     private List<Almacen> almacenesDisponibles = new();
     private Dictionary<string, TaxItem>? taxConfig;
 
+    protected override async Task OnParametersSetAsync()
+    {
+        // Solo cargar datos si estamos en modo edición y no hemos cargado el pedido aún
+        if (EditMode && !string.IsNullOrEmpty(SerieEdit) && NumeroEdit.HasValue && pedido.CODPCL != NumeroEdit)
+        {
+            await LoadExistingOrder();
+        }
+    }
+
     protected override async Task OnInitializedAsync()
     {
-        Console.WriteLine("NuevoPedido: Iniciando...");
-        if (!string.IsNullOrEmpty(CodigoClienteQuery))
-        {
-            pedido.CodigoCliente = CodigoClienteQuery;
-            pedido.NombreCliente = NombreClienteQuery ?? "";
-        }
-
         try
         {
-            seriesDisponibles = await Http.GetFromJsonAsync<List<string>>("api/pedidos/series") ?? new List<string> { "1" };
-            almacenesDisponibles = await Http.GetFromJsonAsync<List<Almacen>>("api/pedidos/almacenes") ?? new List<Almacen>();
+            seriesDisponibles = Enumerable.Range(1, 9).Select(i => i.ToString()).ToList();
+            almacenesDisponibles = await Http.GetFromJsonAsync<List<Almacen>>("/api/pedidos/almacenes") ?? new List<Almacen>();
             
+            GlobalConfig? fullConfig = null;
             try {
-                taxConfig = await Http.GetFromJsonAsync<Dictionary<string, TaxItem>>("api/config/taxes");
-            } catch (Exception ex) {
-                Console.WriteLine($"Error cargando impuestos: {ex.Message}");
-            }
-            
-            // Si venimos de la búsqueda, intentamos obtener los datos extras del cliente (como el Recargo)
-            if (!string.IsNullOrEmpty(pedido.CodigoCliente))
-            {
-                // Buscamos específicamente por el ID del cliente para no traer otros con nombre similar
-                var clientes = await Http.GetFromJsonAsync<List<Cliente>>($"api/clientes?busqueda={pedido.CodigoCliente}");
-                // PRIORIDAD: Buscar coincidencia exacta de código
-                var cli = clientes?.FirstOrDefault(c => c.Codigo == pedido.CodigoCliente) 
-                       ?? clientes?.FirstOrDefault();
+                fullConfig = await Http.GetFromJsonAsync<GlobalConfig>("/api/config/global");
+                taxConfig = fullConfig?.IvaConfig;
+            } catch { }
 
-                if (cli != null) 
+            // Aplicar Permisos por Agente
+            string? s_id = await JS.InvokeAsync<string?>("sessionStorage.getItem", "seller_id");
+            if (fullConfig != null && !string.IsNullOrEmpty(s_id))
+            {
+                if (fullConfig.OrderSettings.PermisosAgentes.TryGetValue(s_id, out var pAgente))
                 {
-                    pedido.REQCLI = cli.REQCLI;
-                    pedido.TARCLI = cli.TARCLI;
-                    pedido.FOPPCL = cli.FPACLI; // Forma de Pago predeterminada
-                    descuentoSeleccionado = cli.DT1CLI ?? 0; // Descuento predeterminado del cliente
-                    pedido.NombreCliente = cli.Nombre; // Asegurar nombre fiscal
-                    Console.WriteLine($"Cliente Cargado: {cli.Nombre} | Tarifa: {cli.TARCLI} | FP: {pedido.FOPPCL} | DTO: {descuentoSeleccionado}");
+                    agentCanDiscount = pAgente.PermitirDescuentos;
+                    pedido.TIPPCL = pAgente.SeriePorDefecto;
+                    Console.WriteLine($"[PERMISOS] Aplicada serie {pAgente.SeriePorDefecto} y Dtos={agentCanDiscount} para Agente {s_id}");
+                }
+                else
+                {
+                    // Globales si no hay específico
+                    agentCanDiscount = fullConfig.OrderSettings.PermitirDescuentos;
+                    pedido.TIPPCL = fullConfig.OrderSettings.SeriePorDefecto;
                 }
             }
 
-            if (string.IsNullOrEmpty(pedido.ALMPCL) && almacenesDisponibles.Any())
-                pedido.ALMPCL = almacenesDisponibles.First().Codigo;
-
-            if (seriesDisponibles.Any())
+            if (!EditMode)
             {
-                pedido.TIPPCL = seriesDisponibles.First();
+                // MODO NUEVO
+                if (!string.IsNullOrEmpty(CodigoClienteQuery))
+                {
+                    pedido.CodigoCliente = CodigoClienteQuery;
+                    pedido.NombreCliente = NombreClienteQuery ?? "";
+                    var clientes = await Http.GetFromJsonAsync<List<Cliente>>($"/api/clientes?busqueda={pedido.CodigoCliente}");
+                    var cli = clientes?.FirstOrDefault(c => c.Codigo == pedido.CodigoCliente);
+                    if (cli != null) await AplicarCliente(cli);
+                }
+
+                if (string.IsNullOrEmpty(pedido.ALMPCL) && almacenesDisponibles.Any())
+                    pedido.ALMPCL = almacenesDisponibles.First().Codigo;
+
+                // Solo cargar número si no venimos de edición
                 await CargarSiguienteNumero();
             }
         }
         catch (Exception ex)
         { 
-            Console.WriteLine($"Error general init: {ex.Message}");
-            seriesDisponibles = new List<string> { "1" }; 
-            almacenesDisponibles = new List<Almacen> { new Almacen { Codigo = "GEN", Nombre = "GENERAL" } };
-            pedido.ALMPCL = "GEN";
+            Console.WriteLine($"Error init: {ex.Message}");
         }
+    }
+
+    private async Task LoadExistingOrder()
+    {
+        try
+        {
+            var pExistente = await Http.GetFromJsonAsync<Pedido>($"/api/pedidos/{SerieEdit}/{NumeroEdit}");
+            if (pExistente != null)
+            {
+                pedido = pExistente;
+                // Cargar datos del cliente para la UI
+                var clientes = await Http.GetFromJsonAsync<List<Cliente>>($"/api/clientes?busqueda={pedido.CodigoCliente}");
+                var cli = clientes?.FirstOrDefault(c => c.Codigo == pedido.CodigoCliente);
+                if (cli != null) clienteSeleccionado = cli;
+                
+                ActualizarTotal();
+                StateHasChanged();
+                Snackbar.Add($"Pedido {SerieEdit}-{NumeroEdit} cargado para edición", Severity.Info);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("No se pudo recuperar el pedido para editar", Severity.Error);
+        }
+    }
+
+    private async Task<IEnumerable<Cliente>> BuscarClientes(string val, CancellationToken token)
+    {
+        if (string.IsNullOrEmpty(val) || val.Length < 1) return new List<Cliente>();
+        try
+        {
+            var res = await Http.GetFromJsonAsync<List<Cliente>>($"api/clientes?busqueda={val}", token);
+            return res ?? new List<Cliente>();
+        }
+        catch { return new List<Cliente>(); }
+    }
+
+    private async Task OnClienteSeleccionado(Cliente cli)
+    {
+        if (cli == null) return;
         
-        Console.WriteLine("NuevoPedido: Fin init.");
+        if (pedido.Lineas.Any())
+        {
+            // Opcional: Confirmar si desea cambiar cliente teniendo líneas
+            // Por ahora lo permitimos pero avisamos que la tarifa podría cambiar
+            Snackbar.Add("Cambiando cliente. Verifique los precios de las líneas si la tarifa es distinta.", Severity.Info);
+        }
+
+        await AplicarCliente(cli);
+    }
+
+    private async Task AplicarCliente(Cliente cli)
+    {
+        clienteSeleccionado = cli;
+        pedido.CodigoCliente = cli.Codigo;
+        pedido.NombreCliente = cli.Nombre;
+        pedido.REQCLI = cli.REQCLI;
+        pedido.TARCLI = cli.TARCLI;
+        pedido.FOPPCL = cli.FPACLI;
+        descuentoSeleccionado = cli.DT1CLI ?? 0;
+        
+        Console.WriteLine($"Cliente Aplicado: {cli.Nombre} | Tarifa: {cli.TARCLI}");
         StateHasChanged();
     }
 
@@ -241,7 +367,7 @@ else
             pedido.Lineas.Add(nuevaLinea);
             articuloSeleccionado = null;
             cantidadSeleccionada = 1;
-            // Volver al descuento por defecto del cliente si existe
+            descuentoSeleccionado = 0;
             ActualizarTotal();
         }
     }

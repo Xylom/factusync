@@ -1,80 +1,153 @@
 @page "/dashboard"
+@inject NavigationManager nav
+@inject HttpClient Http
+@inject IJSRuntime JS
 
-<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
-    <div class="mb-8 pl-2">
-        <MudText Typo="Typo.h4" Class="font-weight-bold" Color="Color.Primary">Panel de Control</MudText>
-        <MudText Typo="Typo.body1" Color="Color.Secondary">Bienvenido al centro de ventas de FactuSync</MudText>
+<MudContainer MaxWidth="MaxWidth.Large" Class="px-4 py-6" Style="background-color: #f8f9fa; min-height: 100vh;">
+    
+    <!-- Header Section -->
+    <div class="d-flex justify-space-between align-start mb-6 px-2">
+        <div>
+            <MudText Typo="Typo.overline" Class="font-weight-bold" Style="color: #8a94a6; letter-spacing: 1px;">
+                @(string.IsNullOrEmpty(sellerName) ? "REPRESENTANTE" : sellerName.ToUpper()) #@sellerId
+            </MudText>
+            <MudText Typo="Typo.h4" Class="font-weight-bold" Style="color: #1a1c1e;">Inicio</MudText>
+        </div>
+        <MudIconButton Icon="@Icons.Material.Filled.Refresh" Color="Color.Primary" OnClick="OnInitializedAsync" />
     </div>
 
-    <MudGrid Spacing="4">
-        <MudItem xs="12" sm="6">
-            <MudPaper Elevation="4" Class="pa-6 rounded-xl mud-width-full cursor-pointer hover-effect" @onclick="@(() => nav.NavigateTo("/clientes"))">
-                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
-                    <MudAvatar Color="Color.Primary" Variant="Variant.Filled" Size="Size.Large">
-                        <MudIcon Icon="@Icons.Material.Filled.PeopleAlt" />
+    <MudGrid Spacing="3">
+        <!-- Summary Statistics Section -->
+        <MudItem xs="12" sm="4">
+            <MudPaper Elevation="0" Class="pa-4 rounded-xl d-flex flex-column h-100" Style="background-color: white; border: 1px solid #f0f2f5;">
+                <div class="d-flex justify-space-between align-start mb-2">
+                    <MudAvatar Color="Color.Primary" Variant="Variant.Filled" Size="Size.Medium" Style="background-color: #eef2ff;">
+                        <MudIcon Icon="@Icons.Material.Filled.ShoppingCart" Style="color: #3b82f6;" />
                     </MudAvatar>
-                    <div class="flex-grow-1">
-                        <MudText Typo="Typo.h6" Class="font-weight-bold">Clientes</MudText>
-                        <MudText Typo="Typo.body2" Class="mud-text-secondary">Gestionar cartera</MudText>
-                    </div>
-                    <MudIcon Icon="@Icons.Material.Filled.ArrowForwardIos" Size="Size.Small" Color="Color.Default" />
-                </MudStack>
+                    <MudChip T="string" Size="Size.Small" Style="background-color: #eef2ff; color: #3b82f6; font-weight: bold;">+12%</MudChip>
+                </div>
+                <MudText Typo="Typo.body2" Style="color: #64748b;">Total Pedidos Hoy</MudText>
+                <MudText Typo="Typo.h4" Class="font-weight-bold" Style="color: #1a1c1e;">@pedidosHoy</MudText>
             </MudPaper>
         </MudItem>
 
-        <MudItem xs="12" sm="6">
-            <MudPaper Elevation="4" Class="pa-6 rounded-xl mud-width-full cursor-pointer hover-effect" @onclick="@(() => nav.NavigateTo("/articulos"))">
-                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
-                    <MudAvatar Color="Color.Secondary" Variant="Variant.Filled" Size="Size.Large">
-                        <MudIcon Icon="@Icons.Material.Filled.Inventory2" />
+        <MudItem xs="12" sm="4">
+            <MudPaper Elevation="0" Class="pa-4 rounded-xl d-flex flex-column h-100" Style="background-color: white; border: 1px solid #f0f2f5;">
+                <div class="d-flex justify-space-between align-start mb-2">
+                    <MudAvatar Color="Color.Warning" Variant="Variant.Filled" Size="Size.Medium" Style="background-color: #fff7ed;">
+                        <MudIcon Icon="@Icons.Material.Filled.Sync" Style="color: #f97316;" />
                     </MudAvatar>
-                    <div class="flex-grow-1">
-                        <MudText Typo="Typo.h6" Class="font-weight-bold">Catálogo</MudText>
-                        <MudText Typo="Typo.body2" Class="mud-text-secondary">Precios y stock</MudText>
-                    </div>
-                    <MudIcon Icon="@Icons.Material.Filled.ArrowForwardIos" Size="Size.Small" Color="Color.Default" />
-                </MudStack>
+                    <MudChip T="string" Size="Size.Small" Style="background-color: #fff7ed; color: #f97316; font-weight: bold;">Alerta</MudChip>
+                </div>
+                <MudText Typo="Typo.body2" Style="color: #64748b;">Sincronización Pendiente</MudText>
+                <MudText Typo="Typo.h4" Class="font-weight-bold" Style="color: #a34c10;">@pendientesSync.ToString("D2")</MudText>
             </MudPaper>
         </MudItem>
 
+        <MudItem xs="12" sm="4">
+            <MudPaper Elevation="0" Class="pa-4 rounded-xl d-flex flex-column h-100" Style="background-color: white; border: 1px solid #f0f2f5;">
+                <div class="d-flex justify-space-between align-start mb-2">
+                    <MudAvatar Color="Color.Info" Variant="Variant.Filled" Size="Size.Medium" Style="background-color: #f0f9ff;">
+                        <MudIcon Icon="@Icons.Material.Filled.LocationOn" Style="color: #0ea5e9;" />
+                    </MudAvatar>
+                    <MudText Typo="Typo.caption" Class="font-weight-bold" Style="color: #64748b;">Meta: 15</MudText>
+                </div>
+                <MudText Typo="Typo.body2" Style="color: #64748b;">Clientes Visitados</MudText>
+                <div class="d-flex align-baseline">
+                    <MudText Typo="Typo.h4" Class="font-weight-bold" Style="color: #1a1c1e;">09</MudText>
+                    <MudText Typo="Typo.body1" Style="color: #94a3b8;" Class="ml-2">/ 15</MudText>
+                </div>
+            </MudPaper>
+        </MudItem>
+
+        <!-- Quick Access Section -->
         <MudItem xs="12">
-            <MudPaper Elevation="8" Class="pa-8 rounded-xl mud-width-full cursor-pointer hover-effect border-2 border-solid" 
-                      Style="border-color: var(--mud-palette-tertiary); background-color: var(--mud-palette-surface);"
-                      @onclick="@(() => nav.NavigateTo("/pedidos/nuevo"))">
-                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="6">
-                    <MudAvatar Color="Color.Tertiary" Variant="Variant.Filled" Size="Size.Large" Style="width: 70px; height: 70px;">
-                        <MudIcon Icon="@Icons.Material.Filled.AddShoppingCart" Size="Size.Large" />
-                    </MudAvatar>
-                    <div class="flex-grow-1">
-                        <MudText Typo="Typo.h5" Class="font-weight-bold">NUEVO PEDIDO</MudText>
-                        <MudText Typo="Typo.body1" Class="mud-text-secondary">Capturar orden de venta inmediata</MudText>
-                    </div>
-                    <MudButton Variant="Variant.Filled" Color="Color.Tertiary" EndIcon="@Icons.Material.Filled.ArrowForward" Class="rounded-pill d-none d-sm-flex px-6">
-                        EMPEZAR
-                    </MudButton>
-                </MudStack>
+            <div class="mt-4 mb-2">
+                <MudText Typo="Typo.h6" Class="font-weight-bold" Style="color: #1a1c1e;">Accesos Rápidos</MudText>
+            </div>
+        </MudItem>
+
+        <MudItem xs="12" sm="6">
+            <MudPaper Elevation="0" Class="pa-5 rounded-xl cursor-pointer d-flex align-center justify-space-between h-100" 
+                      Style="background-color: #004e92; color: white;" 
+                      @onclick='(() => nav.NavigateTo("/pedidos/nuevo"))'>
+                <div>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold">Nuevo Pedido</MudText>
+                    <MudText Typo="Typo.caption" Style="color: #bfdbfe;">Crear una nueva solicitud de compra para un cliente</MudText>
+                </div>
+                <MudFab Color="Color.Info" StartIcon="@Icons.Material.Filled.Add" Size="Size.Small" Elevation="0" Style="background-color: #3b82f644;" />
             </MudPaper>
         </MudItem>
+
+        <MudItem xs="12" sm="6">
+            <MudPaper Elevation="0" Class="pa-5 rounded-xl cursor-pointer d-flex align-center justify-space-between h-100" 
+                      Style="background-color: #e5e7eb; color: #1a1c1e;" 
+                      @onclick='(() => nav.NavigateTo("/clientes"))'>
+                <div>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold">Lista de Clientes</MudText>
+                    <MudText Typo="Typo.caption" Style="color: #64748b;">Ver y gestionar la cartera de clientes de empresa</MudText>
+                </div>
+                <MudIcon Icon="@Icons.Material.Filled.People" Size="Size.Large" Style="color: #004e92; opacity: 0.8;" />
+            </MudPaper>
+        </MudItem>
+
+        <!-- Charts Section -->
+        <MudItem xs="12" sm="8">
+            <MudPaper Elevation="0" Class="pa-4 rounded-xl h-100" Style="background-color: #f8fafc; border: 1px solid #f1f5f9;">
+                <div class="d-flex justify-space-between align-center mb-4">
+                    <MudText Typo="Typo.subtitle1" Class="font-weight-bold">Volumen de Ventas Reciente</MudText>
+                    <MudLink Color="Color.Primary" Class="text-sm font-weight-bold">Ver Detalles</MudLink>
+                </div>
+                <MudChart ChartType="ChartType.Bar" ChartSeries="@Series" XAxisLabels="@Labels" Width="100%" Height="220px" CanIdentifyDataPoints="true" />
+            </MudPaper>
+        </MudItem>
+
+        <!-- System Status -->
+        <MudItem xs="12" sm="4">
+            <MudPaper Elevation="0" Class="pa-4 rounded-xl h-100" Style="background-color: #dcf1f9; color: #0369a1;">
+                <MudText Typo="Typo.subtitle2" Class="font-weight-bold mb-1">Estado del Sistema</MudText>
+                <div class="d-flex align-center mb-3">
+                    <div style="width: 10px; height: 10px; border-radius: 50%; background-color: #22c55e; margin-right: 8px;"></div>
+                    <MudText Typo="Typo.body2" Class="font-weight-bold">Base de Datos Sincronizada</MudText>
+                </div>
+                <MudText Typo="Typo.caption" Style="color: #0e7490; display: block; line-height: 1.4;">
+                    Última sincronización completa realizada a las 08:45 AM. Los catálogos están actualizados para el Mapa de Ruta 402.
+                </MudText>
+            </MudPaper>
+        </MudItem>
+
     </MudGrid>
 
-    <div class="mt-12 d-flex justify-center align-center gap-2">
-        <MudIcon Icon="@Icons.Material.Filled.CloudDone" Color="Color.Success" Size="Size.Small" />
-        <MudText Typo="Typo.caption" Class="mud-text-secondary">FactuSync Mobile V1.5 | Conexión Factusol Activa</MudText>
-    </div>
+    <div class="pb-10"></div>
 </MudContainer>
 
 <style>
-    .hover-effect {
-        transition: all 0.2s ease-in-out;
-    }
-    .hover-effect:hover {
-        transform: translateY(-4px);
-        box-shadow: var(--mud-elevation-12);
-        background-color: var(--mud-palette-background-grey);
-    }
-    .cursor-pointer { cursor: pointer; }
+    .cursor-pointer { cursor: pointer; transition: transform 0.1s; }
+    .cursor-pointer:active { transform: scale(0.98); }
+    .mud-chart-bar { rx: 4px; }
 </style>
 
 @code {
-    [Inject] private NavigationManager nav { get; set; } = default!;
+    private int pedidosHoy = 0;
+    private int pendientesSync = 0;
+    private string sellerName = "";
+    private string sellerId = "";
+
+    public List<ChartSeries<double>> Series = new List<ChartSeries<double>>()
+    {
+        new ChartSeries<double> { Name = "Ventas", Data = new double[] { 40, 20, 25, 55, 10, 20, 15 } }
+    };
+    public string[] Labels = { "LUN", "MAR", "MIE", "JUE", "VIE", "SAB", "DOM" };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try {
+            sellerName = await JS.InvokeAsync<string>("sessionStorage.getItem", "seller_name");
+            sellerId = await JS.InvokeAsync<string>("sessionStorage.getItem", "seller_id");
+
+            var pedidos = await Http.GetFromJsonAsync<List<Pedido>>("api/pedidos") ?? new();
+            pedidosHoy = pedidos.Count(p => p.Fecha.Date == DateTime.Today);
+            pendientesSync = pedidos.Count(p => p.ESTPCL == 0);
+        } catch { }
+    }
 }

@@ -3,42 +3,119 @@
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
 @inject IJSRuntime JS
+@inject NavigationManager NavManager
 
-<MudText Typo="Typo.h5" Class="mb-4 font-weight-bold" Color="Color.Primary">Historial de Mis Pedidos</MudText>
+<MudContainer MaxWidth="MaxWidth.Large" Class="px-4 py-6" Style="background-color: #f8f9fa; min-height: 100vh; position: relative;">
+    
+    <!-- Branding & Header -->
+    <div class="d-flex justify-space-between align-center mb-6">
+        <div>
+            <MudText Typo="Typo.h4" Class="font-weight-bold" Style="color: #1a1c1e;">Listado de Pedidos</MudText>
+            <MudText Typo="Typo.body2" Style="color: #6c757d;">Visualiza y gestiona las órdenes de compra entrantes.</MudText>
+        </div>
+        <MudAvatar Color="Color.Primary" Variant="Variant.Filled" Size="Size.Large" Class="shadow-sm">XY</MudAvatar>
+    </div>
 
-<MudAlert Severity="Severity.Info" Variant="Variant.Filled" Class="mb-6 rounded-lg">
-    Esta sección muestra los pedidos que has generado hoy pendientes de sincronizar con la oficina central.
-</MudAlert>
+    <!-- Search & Filter Bar -->
+    <div class="d-flex gap-2 mb-6 align-center">
+        <MudPaper Elevation="0" Class="flex-grow-1 pa-2 rounded-lg d-flex align-center" Style="background-color: #e9ecef; border: 1px solid #dee2e6;">
+            <MudIcon Icon="@Icons.Material.Filled.Search" Class="mx-2" Style="color: #adb5bd;" />
+            <MudTextField @bind-Value="busqueda" Placeholder="Buscar pedido o cliente..." Variant="Variant.Text" Margin="Margin.Dense" Class="flex-grow-1" DisableUnderLine="true" />
+        </MudPaper>
+        <MudIconButton Icon="@Icons.Material.Filled.FilterList" Variant="Variant.Filled" Style="background-color: #e9ecef; color: #495057; height: 48px; width: 48px;" Class="rounded-lg shadow-none" />
+    </div>
 
-<MudTable Items="pedidos" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="2" Class="rounded-lg" OnRowClick="@VerDetalle" T="Pedido" RowStyle="cursor: pointer;" Loading="cargando">
-    <HeaderContent>
-        <MudTh>Pedido #</MudTh>
-        <MudTh>Fecha</MudTh>
-        <MudTh>Cliente</MudTh>
-        <MudTh>Total</MudTh>
-        <MudTh>Estado</MudTh>
-        <MudTh Style="text-align: right;">Acciones</MudTh>
-    </HeaderContent>
-    <RowTemplate>
-        <MudTd DataLabel="Pedido #">@($"{context.TIPPCL}-{context.CODPCL}")</MudTd>
-        <MudTd DataLabel="Fecha">@context.Fecha.ToShortDateString()</MudTd>
-        <MudTd DataLabel="Cliente">@context.CNOPCL</MudTd>
-        <MudTd DataLabel="Total"><MudText Color="Color.Primary" Class="font-weight-bold">@context.Total.ToString("N2")</MudText></MudTd>
-        <MudTd DataLabel="Estado">
-            <MudChip T="string" Color="Color.Info" Size="Size.Small">Pendiente</MudChip>
-        </MudTd>
-        <MudTd DataLabel="Acciones" Style="text-align: right;">
-            <div @onclick:stopPropagation="true">
-                <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => ConfirmarEliminar(context))" />
+    <!-- Summary Stats Strip (Horizontal) -->
+    <div class="d-flex overflow-x-auto gap-3 pb-4 no-scrollbar mb-6">
+        <MudPaper Elevation="0" Class="pa-4 rounded-xl d-flex flex-column justify-center flex-shrink-0" Style="background-color: white; border: 1px solid #f1f3f5; min-width: 180px;">
+            <MudText Typo="Typo.caption" Class="font-weight-bold" Style="color: #1e88e5; letter-spacing: 0.2px;">VENTAS MES</MudText>
+            <div class="d-flex align-end">
+                <MudText Typo="Typo.subtitle1" Class="font-weight-bold" Style="color: #1a1c1e;">€ @ventasMensuales.ToString("N2")</MudText>
+                <MudText Typo="Typo.caption" Class="ml-1 mb-1 font-weight-bold" Style="color: #43a047;">+12%</MudText>
             </div>
-        </MudTd>
-    </RowTemplate>
-</MudTable>
+        </MudPaper>
 
+        <MudPaper Elevation="0" Class="pa-4 rounded-xl d-flex flex-column justify-center flex-shrink-0" Style="background-color: white; border: 1px solid #f1f3f5; min-width: 160px;">
+            <MudText Typo="Typo.caption" Class="font-weight-bold" Style="color: #6c757d; letter-spacing: 0.2px;">PROM. PEDIDO</MudText>
+            <MudText Typo="Typo.subtitle1" Class="font-weight-bold" Style="color: #1a1c1e;">€ @promedioPedido.ToString("N2")</MudText>
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-4 rounded-xl d-flex flex-column justify-center flex-shrink-0" Style="background-color: white; border: 1px solid #f1f3f5; min-width: 140px;">
+            <MudText Typo="Typo.caption" Class="font-weight-bold" Style="color: #6c757d; letter-spacing: 0.2px;">ENTREGA</MudText>
+            <MudText Typo="Typo.subtitle1" Class="font-weight-bold" Style="color: #1a1c1e;">98.2%</MudText>
+        </MudPaper>
+    </div>
+
+    <!-- Pedidos Table Header -->
+    <div class="px-4 mb-2 d-flex justify-space-between" style="color: #adb5bd;">
+        <MudText Typo="Typo.caption" Class="font-weight-bold" Style="width: 25%;">ID PEDIDO</MudText>
+        <MudText Typo="Typo.caption" Class="font-weight-bold" Style="width: 25%;">FECHA</MudText>
+        <MudText Typo="Typo.caption" Class="font-weight-bold" Style="width: 50%;">CLIENTE</MudText>
+    </div>
+
+    <!-- List Section -->
+    @if (cargando)
+    {
+        <div class="d-flex justify-center my-10">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+        </div>
+    }
+    else
+    {
+        <MudStack Spacing="1">
+            @foreach (var p in pedidosFiltrados)
+            {
+                <MudPaper Elevation="0" Class="pa-4 rounded-xl d-flex justify-space-between align-center order-row" Style="background-color: white; border: 1px solid #f8f9fa;" @onclick="@(() => VerDetalleManual(p))">
+                    <div style="width: 25%;">
+                        <MudText Typo="Typo.body2" Class="font-weight-bold" Style="color: #1e88e5;">PD-@p.TIPPCL-@p.CODPCL.ToString().PadLeft(3, '0')</MudText>
+                    </div>
+                    <div style="width: 25%;">
+                        <MudText Typo="Typo.caption" Class="d-block" Style="color: #1a1c1e; font-weight: 500;">@p.Fecha.Day @p.Fecha.ToString("MMM"),</MudText>
+                        <MudText Typo="Typo.caption" Style="color: #adb5bd;">@p.Fecha.Year</MudText>
+                    </div>
+                    <div style="width: 50%;" class="d-flex align-center">
+                        <MudAvatar Size="Size.Small" Color="Color.Primary" Variant="Variant.Filled" Style="background-color: #bbdefb; color: #1e88e5; font-size: 10px;" Class="mr-3">
+                            @(p.NombreCliente?.Substring(0, Math.Min(2, p.NombreCliente.Length)).ToUpper())
+                        </MudAvatar>
+                        <MudText Typo="Typo.caption" Class="font-weight-bold text-truncate" Style="color: #1a1c1e;">@p.NombreCliente</MudText>
+                    </div>
+                </MudPaper>
+            }
+        </MudStack>
+    }
+
+    <!-- Bottom Stats Bar -->
+    <div class="fixed-bottom-bar px-4 py-3">
+        <div class="d-flex justify-space-between align-center">
+            <MudPaper Elevation="0" Class="pa-3 rounded-xl d-flex align-center flex-grow-1 mr-2" Style="background-color: white; border: 1px solid #f1f3f5;">
+                <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Color="Color.Primary" Class="mr-3" />
+                <div>
+                    <MudText Typo="Typo.caption" Style="color: #adb5bd; font-weight: 500;">TOTAL HOY</MudText>
+                    <MudText Typo="Typo.body2" Class="font-weight-bold">€ @totalHoy.ToString("N2")</MudText>
+                </div>
+            </MudPaper>
+            
+            <MudPaper Elevation="0" Class="pa-3 rounded-xl d-flex align-center flex-grow-1 mr-10" Style="background-color: white; border: 1px solid #f1f3f5;">
+                <MudIcon Icon="@Icons.Material.Filled.HourglassEmpty" Color="Color.Warning" Class="mr-3" />
+                <div>
+                    <MudText Typo="Typo.caption" Style="color: #adb5bd; font-weight: 500;">PENDIENTES</MudText>
+                    <MudText Typo="Typo.body2" Class="font-weight-bold">@pendientes órd...</MudText>
+                </div>
+            </MudPaper>
+        </div>
+    </div>
+
+    <!-- FAB -->
+    <MudFab Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" Class="fab-button" OnClick="@(() => NavManager.NavigateTo("/pedidos/nuevo"))" 
+            Style="background-color: #004e92; position: fixed; bottom: 80px; right: 20px; z-index: 100;" />
+
+</MudContainer>
+
+<!-- Detail Dialog -->
 <MudDialog @bind-Visible="_visible" Options="_dialogOptions">
     <TitleContent>
         <MudText Typo="Typo.h6">
-            <MudIcon Icon="@Icons.Material.Filled.Receipt" Class="mr-3"/> Vista Previa Pedido #@_selectedPedido?.CODPCL
+            <MudIcon Icon="@Icons.Material.Filled.Receipt" Class="mr-3"/> Pedido #@_selectedPedido?.CODPCL
         </MudText>
     </TitleContent>
     <DialogContent>
@@ -56,40 +133,46 @@
                 <RowTemplate Context="linea">
                     <MudTd>@linea.DESLPC</MudTd>
                     <MudTd>@linea.CANLPC</MudTd>
-                    <MudTd>@linea.TOTLPC?.ToString("N2")</MudTd>
+                    <MudTd>€ @linea.TOTLPC?.ToString("N2")</MudTd>
                 </RowTemplate>
             </MudTable>
         }
     </DialogContent>
     <DialogActions>
+        <MudButton Variant="Variant.Text" Color="Color.Error" OnClick="@(() => ConfirmarEliminarDirecto(_selectedPedido))" Class="mr-auto">Eliminar</MudButton>
+        <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="@(() => EditarPedido(_selectedPedido))">Editar</MudButton>
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="() => _visible = false" Class="px-10">Cerrar</MudButton>
     </DialogActions>
 </MudDialog>
 
-<MudMessageBox @ref="mbox" Title="Confirmar Eliminación">
-    <MessageContent>
-        @if (pedidoAEliminar != null)
-        {
-            <MudText>¿Estás seguro de que deseas eliminar el pedido #@pedidoAEliminar.TIPPCL-@pedidoAEliminar.CODPCL de <b>@pedidoAEliminar.CNOPCL</b>?</MudText>
-        }
-    </MessageContent>
-    <YesButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.Delete">Eliminar</MudButton>
-    </YesButton>
-    <CancelButton>
-        <MudButton Variant="Variant.Text">Cancelar</MudButton>
-    </CancelButton>
-</MudMessageBox>
+<MudMessageBox @ref="mbox" Title="Confirmar Eliminación" YesText="Eliminar" CancelText="Cancelar" />
+
+<style>
+    .order-row { transition: all 0.2s; cursor: pointer; }
+    .order-row:hover { background-color: #f1f8ff !important; border-color: #bbdefb !important; }
+    .fixed-bottom-bar { position: fixed; bottom: 0; left: 0; right: 0; background-color: rgba(248, 249, 250, 0.9); backdrop-filter: blur(10px); z-index: 10; border-top: 1px solid #e9ecef; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    .fab-button { box-shadow: 0 4px 12px rgba(0, 78, 146, 0.3); }
+</style>
 
 @code {
-    private bool _visible;
-    private Pedido? _selectedPedido;
-    private Pedido? pedidoAEliminar;
-    private MudMessageBox? mbox;
-    private List<PedidoLinea> _selectedLineas = new();
-    private DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
     private List<Pedido> pedidos = new();
     private bool cargando = true;
+    private string busqueda = "";
+    private decimal ventasMensuales = 0;
+    private decimal promedioPedido = 0;
+    private decimal totalHoy = 0;
+    private int pendientes = 0;
+
+    private bool _visible;
+    private Pedido? _selectedPedido;
+    private List<PedidoLinea> _selectedLineas = new();
+    private DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
+    private MudMessageBox? mbox;
+
+    private IEnumerable<Pedido> pedidosFiltrados => pedidos
+        .Where(p => string.IsNullOrEmpty(busqueda) || (p.NombreCliente?.Contains(busqueda, StringComparison.OrdinalIgnoreCase) ?? false) || p.CODPCL.ToString().Contains(busqueda));
 
     protected override async Task OnInitializedAsync()
     {
@@ -99,65 +182,57 @@
     private async Task LoadPedidos()
     {
         cargando = true;
-        try
-        {
+        try {
             pedidos = await Http.GetFromJsonAsync<List<Pedido>>("api/pedidos") ?? new();
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error: {ex.Message}");
-        }
-        finally
-        {
-            cargando = false;
-        }
+            CalcularMetricas();
+        } catch { }
+        finally { cargando = false; }
     }
 
-    private async Task VerDetalle(TableRowClickEventArgs<Pedido> args)
+    private void CalcularMetricas()
     {
-        _selectedPedido = args.Item;
-        try 
-        {
-            _selectedLineas = await Http.GetFromJsonAsync<List<PedidoLinea>>($"api/pedidos/lineas?tip={_selectedPedido.TIPPCL}&cod={_selectedPedido.CODPCL}") ?? new();
-            _visible = true;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error: {ex.Message}");
-        }
-    }
-
-    private async Task ConfirmarEliminar(Pedido pedido)
-    {
-        pedidoAEliminar = pedido;
-        StateHasChanged();
+        var inicioMes = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        var pedidosMes = pedidos.Where(p => p.Fecha >= inicioMes).ToList();
         
-        bool? result = await mbox?.ShowAsync();
-        if (result == true)
-        {
-            await EliminarPedido(pedido);
+        ventasMensuales = pedidosMes.Sum(p => p.Total);
+        promedioPedido = pedidosMes.Any() ? ventasMensuales / pedidosMes.Count : 0;
+        totalHoy = pedidos.Where(p => p.Fecha.Date == DateTime.Today).Sum(p => p.Total);
+        pendientes = pedidos.Count(p => p.ESTPCL == 0);
+    }
+
+    private async Task VerDetalleManual(Pedido p)
+    {
+        _selectedPedido = p;
+        try {
+            _selectedLineas = await Http.GetFromJsonAsync<List<PedidoLinea>>($"api/pedidos/lineas?tip={p.TIPPCL}&cod={p.CODPCL}") ?? new();
+            _visible = true;
+        } catch { }
+    }
+
+    private void EditarPedido(Pedido? p)
+    {
+        if (p == null) return;
+        NavManager.NavigateTo($"/pedidos/nuevo?edit=true&serie={p.TIPPCL}&numero={p.CODPCL}");
+    }
+
+    private async Task ConfirmarEliminarDirecto(Pedido? p)
+    {
+        if (p == null) return;
+        bool? result = await mbox!.ShowAsync();
+        if (result == true) {
+            _visible = false;
+            await EliminarPedido(p);
         }
     }
 
     private async Task EliminarPedido(Pedido pedido)
     {
-        try
-        {
+        try {
             var response = await Http.DeleteAsync($"api/pedidos?serie={pedido.TIPPCL}&numero={pedido.CODPCL}");
-            if (response.IsSuccessStatusCode)
-            {
-                Snackbar.Add("Pedido eliminado correctamente", Severity.Success);
+            if (response.IsSuccessStatusCode) {
+                Snackbar.Add("Pedido eliminado", Severity.Success);
                 await LoadPedidos();
             }
-            else
-            {
-                var error = await response.Content.ReadAsStringAsync();
-                Snackbar.Add($"Error al eliminar: {error}", Severity.Error);
-            }
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Error de conexión: {ex.Message}", Severity.Error);
-        }
+        } catch { }
     }
 }

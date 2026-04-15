@@ -1,86 +1,260 @@
 @page "/configuracion"
 @inject HttpClient Http
 @inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@inject NavigationManager Nav
 @using FactuSync.Shared
 
-<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-6">
-    <div class="mb-8">
-        <MudText Typo="Typo.h4" Class="font-weight-bold" Color="Color.Primary">Configuración de Impuestos</MudText>
-        <MudText Typo="Typo.body1" Color="Color.Secondary">Defina los porcentajes de IVA y Recargo de Equivalencia para cada índice de Factusol.</MudText>
-    </div>
-
-    @if (taxes == null)
+<MudContainer MaxWidth="MaxWidth.Large" Class="px-4 py-8" Style="background-color: #f8f9fa; min-height: 100vh;">
+    
+    @if (!esJefe && !cargando)
     {
-        <div class="d-flex justify-center pa-10">
-            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+        <div class="d-flex flex-column align-center justify-center my-16">
+            <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Large" Color="Color.Error" Style="font-size: 80px;" />
+            <MudText Typo="Typo.h5" Class="mt-4 font-weight-bold">Acceso Restringido</MudText>
+            <MudText Typo="Typo.body1" Color="Color.Secondary">Solo los jefes de equipo pueden modificar la configuración global.</MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-6 px-10 rounded-pill" OnClick="@(() => Nav.NavigateTo("/dashboard"))">Volver al Inicio</MudButton>
+        </div>
+    }
+    else if (cargando)
+    {
+        <div class="d-flex justify-center my-16">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
         </div>
     }
     else
     {
-        <MudGrid>
-            @foreach (var key in taxes.Keys.OrderBy(k => k))
-            {
-                <MudItem xs="12" sm="6" md="4">
-                    <MudPaper Elevation="4" Class="pa-4 rounded-xl border-l-8 border-solid" Style="border-color: var(--mud-palette-primary);">
-                        <MudText Typo="Typo.h6" Class="mb-2">Índice #@key</MudText>
-                        <MudNumericField @bind-Value="taxes[key].IVA" Label="IVA %" Variant="Variant.Outlined" Adornment="Adornment.End" AdornmentText="%" Format="N2" Class="mb-2" />
-                        <MudNumericField @bind-Value="taxes[key].RE" Label="RE %" Variant="Variant.Outlined" Adornment="Adornment.End" AdornmentText="%" Format="N2" />
-                    </MudPaper>
-                </MudItem>
-            }
-        </MudGrid>
+        <div class="mb-10">
+            <MudText Typo="Typo.overline" Class="font-weight-bold" Style="color: #0056b3; letter-spacing: 1.5px;">CENTRO DE CONTROL</MudText>
+            <MudText Typo="Typo.h4" Class="font-weight-bold" Style="color: #1a1c1e;">Configuración Avanzada</MudText>
+            <MudText Typo="Typo.body2" Style="color: #6c757d;">Gestione impuestos, permisos de agentes y parámetros globales del sistema.</MudText>
+        </div>
 
-        <div class="d-flex justify-end mt-8">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" StartIcon="@Icons.Material.Filled.Save" OnClick="GuardarConfig" Disabled="guardando">
-                @if (guardando)
-                {
-                    <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true" />
-                    <MudText Class="ms-2">Guardando...</MudText>
-                }
-                else
-                {
-                    <text>Guardar Configuración</text>
-                }
+        <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="px-0 pt-6" Color="Color.Primary" Variant="Variant.Text" Class="custom-tabs">
+            
+            <!-- Tab 1: Impuestos -->
+            <MudTabPanel Text="Impuestos (IVA/RE)" Icon="@Icons.Material.Filled.Percent">
+                <MudText Typo="Typo.h6" Class="mb-4 font-weight-bold" Style="color: #1a1c1e;">Configuración de IVA por Índice</MudText>
+                <MudGrid>
+                    @if (config?.IvaConfig != null)
+                    {
+                        @foreach (var key in config.IvaConfig.Keys.OrderBy(k => k))
+                        {
+                            <MudItem xs="12" sm="6" md="4">
+                                <MudPaper Elevation="0" Class="pa-6 rounded-xl border border-solid" Style="background-color: white; border-color: #e9ecef;">
+                                    <div class="d-flex align-center mb-4">
+                                        <MudAvatar Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small" Class="mr-3">@key</MudAvatar>
+                                        <MudText Typo="Typo.subtitle1" Class="font-weight-bold">Índice Factusol #@key</MudText>
+                                    </div>
+                                    <MudStack Spacing="3">
+                                        <MudNumericField @bind-Value="config.IvaConfig[key].IVA" Label="IVA (%)" Variant="Variant.Filled" Adornment="Adornment.End" AdornmentText="%" Format="N2" HideSpinButtons="false" DisableUnderLine="true" Class="rounded-lg bg-light" />
+                                        <MudNumericField @bind-Value="config.IvaConfig[key].RE" Label="Recargo (%)" Variant="Variant.Filled" Adornment="Adornment.End" AdornmentText="%" Format="N2" HideSpinButtons="false" DisableUnderLine="true" Class="rounded-lg bg-light" />
+                                    </MudStack>
+                                </MudPaper>
+                            </MudItem>
+                        }
+                    }
+                </MudGrid>
+            </MudTabPanel>
+
+            <!-- Tab 2: Parámetros del Pedido -->
+            <MudTabPanel Text="Parámetros" Icon="@Icons.Material.Filled.Tune">
+                <MudGrid>
+                    <MudItem xs="12" md="6">
+                        <MudPaper Elevation="0" Class="pa-6 rounded-xl border border-solid h-100" Style="background-color: white; border-color: #e9ecef;">
+                            <MudText Typo="Typo.h6" Class="mb-4 font-weight-bold">Reglas de Negocio</MudText>
+                            <MudStack Spacing="4">
+                                <div class="d-flex justify-space-between align-center px-2">
+                                    <div>
+                                        <MudText Typo="Typo.body1" Class="font-weight-bold">Permitir Descuentos</MudText>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">Habilita la edición de descuentos en líneas de pedido.</MudText>
+                                    </div>
+                                    <MudSwitch T="bool" @bind-Value="config.OrderSettings.PermitirDescuentos" Color="Color.Success" UnCheckedColor="Color.Default" />
+                                </div>
+                                <MudDivider />
+                                <div class="px-2">
+                                    <MudText Typo="Typo.body1" Class="font-weight-bold mb-1">Serie por Defecto</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-3">Serie que se asignará automáticamente a ventas nuevas.</MudText>
+                                    @if(series != null)
+                                    {
+                                        <MudSelect T="string" @bind-Value="config.OrderSettings.SeriePorDefecto" Variant="Variant.Filled" DisableUnderLine="true" Class="rounded-lg bg-light" Dense="true">
+                                            @foreach(var s in series)
+                                            {
+                                                <MudSelectItem Value="@s">Serie @s</MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                    }
+                                </div>
+                            </MudStack>
+                        </MudPaper>
+                    </MudItem>
+                </MudGrid>
+            </MudTabPanel>
+
+            <!-- Tab 3: Agentes -->
+            <MudTabPanel Text="Agentes y Acceso" Icon="@Icons.Material.Filled.Badge">
+                <MudPaper Elevation="0" Class="pa-6 rounded-xl border border-solid" Style="background-color: white; border-color: #e9ecef;">
+                    <div class="d-flex justify-space-between align-center mb-6">
+                        <div>
+                            <MudText Typo="Typo.h6" Class="font-weight-bold">Gestión de Agentes</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Active o desactive quién puede generar reportes y pedidos.</MudText>
+                        </div>
+                        <div class="d-flex align-center">
+                            <MudText Typo="Typo.body2" Class="mr-2">Restricción Global</MudText>
+                            <MudSwitch T="bool" @bind-Value="config.OrderSettings.RestringirPedidosAAgentes" Color="Color.Primary" />
+                        </div>
+                    </div>
+
+                    @if (agentes == null)
+                    {
+                        <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+                    }
+                    else
+                    {
+                        <MudTable Items="agentes" Dense="true" Hover="true" Elevation="0" Class="rounded-lg border border-solid" Style="border-color: #f1f3f5;">
+                            <HeaderContent>
+                                <MudTh>Comercial</MudTh>
+                                <MudTh>Acceso</MudTh>
+                                <MudTh>Dtos.</MudTh>
+                                <MudTh>Serie</MudTh>
+                            </HeaderContent>
+                            <RowTemplate Context="ag">
+                                <MudTd>
+                                    <div class="d-flex align-center">
+                                        <MudAvatar Color="Color.Info" Variant="Variant.Filled" Size="Size.Small" Style="background-color: #bbdefb; color: #1e88e5; font-size: 10px;" Class="mr-3">@ag.NOMAGE.Substring(0,1)</MudAvatar>
+                                        <div>
+                                            <MudText Typo="Typo.caption" Class="font-weight-bold d-block">@ag.NOMAGE</MudText>
+                                            <MudText Typo="Typo.caption" Style="color: #adb5bd; font-size: 10px;">ID: @ag.CODAGE</MudText>
+                                        </div>
+                                    </div>
+                                </MudTd>
+                                <MudTd>
+                                    <MudCheckBox T="bool" 
+                                                 Value="@GetPerm(ag.CODAGE).AccesoMovil" 
+                                                 ValueChanged="@((bool v) => UpdatePerm(ag.CODAGE, p => p.AccesoMovil = v))"
+                                                 Color="Color.Primary" Dense="true" />
+                                </MudTd>
+                                <MudTd>
+                                    <MudCheckBox T="bool" 
+                                                 Value="@GetPerm(ag.CODAGE).PermitirDescuentos" 
+                                                 ValueChanged="@((bool v) => UpdatePerm(ag.CODAGE, p => p.PermitirDescuentos = v))"
+                                                 Color="Color.Primary" Dense="true" />
+                                </MudTd>
+                                <MudTd>
+                                    <MudSelect T="string" 
+                                               Value="@GetPerm(ag.CODAGE).SeriePorDefecto" 
+                                               ValueChanged="@((string v) => UpdatePerm(ag.CODAGE, p => p.SeriePorDefecto = v))"
+                                               Dense="true" Margin="Margin.Dense" Variant="Variant.Text" Style="font-size: 12px; width: 40px;">
+                                        @foreach(var s in series)
+                                        {
+                                            <MudSelectItem Value="@s">@s</MudSelectItem>
+                                        }
+                                    </MudSelect>
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
+                </MudPaper>
+            </MudTabPanel>
+        </MudTabs>
+
+        <div class="fixed-actions px-4 py-3">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Size="Size.Large" StartIcon="@Icons.Material.Filled.Save" OnClick="GuardarConfig" Disabled="guardando" Class="rounded-xl py-4 shadow-lg" Style="background-color: #004e92;">
+                @if (guardando) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> <text>Sincronizando...</text> }
+                else { <text>GUARDAR CONFIGURACIÓN</text> }
             </MudButton>
         </div>
     }
 
-    <MudAlert Severity="Severity.Info" Class="mt-10 rounded-lg">
-        <b>Nota Técnica:</b> Estos valores se guardan en el archivo <code>appsettings.json</code> del servidor y afectan el cálculo de todos los pedidos nuevos creados desde la aplicación. Los índices corresponden al campo <code>IVAART</code> de la tabla de artículos en Factusol.
-    </MudAlert>
+    <div class="pb-16"></div>
 </MudContainer>
 
-@code {
-    private Dictionary<string, TaxItemClient>? taxes;
-    private bool guardando = false;
+<style>
+    .bg-light { background-color: #f8f9fa !important; }
+    .custom-tabs .mud-tabs-tab-content { font-weight: 600; letter-spacing: 0.5px; }
+    .fixed-actions { position: fixed; bottom: 0; left: 0; right: 0; background-color: rgba(255,255,255,0.8); backdrop-filter: blur(8px); z-index: 50; }
+</style>
 
-    public class TaxItemClient 
-    { 
-        public decimal IVA { get; set; } 
-        public decimal RE { get; set; } 
-    }
+@code {
+    private GlobalConfig config = new();
+    private List<Agente>? agentes;
+    private List<string>? series;
+    private bool cargando = true;
+    private bool guardando = false;
+    private bool esJefe = false;
 
     protected override async Task OnInitializedAsync()
     {
-        try
+        var bossFlag = await JS.InvokeAsync<string>("sessionStorage.getItem", "is_boss");
+        esJefe = bossFlag == "1";
+
+        if (esJefe)
         {
-            taxes = await Http.GetFromJsonAsync<Dictionary<string, TaxItemClient>>("api/config/taxes");
-            
-            // Si el servidor devuelve vacío o nulo, inicializamos con los 3 índices estándar
-            if (taxes == null || !taxes.Any())
-            {
-                taxes = new Dictionary<string, TaxItemClient>
-                {
-                    { "1", new TaxItemClient { IVA = 21, RE = 5.2m } },
-                    { "2", new TaxItemClient { IVA = 10, RE = 1.4m } },
-                    { "3", new TaxItemClient { IVA = 4, RE = 0.5m } }
-                };
-            }
+            await LoadData();
         }
-        catch (Exception ex)
+        else
         {
-            Snackbar.Add($"Error cargando configuración: {ex.Message}", Severity.Error);
+            cargando = false;
         }
+    }
+
+    private async Task LoadData()
+    {
+        cargando = true;
+        
+        // Cargar Configuración Global
+        try {
+            config = await Http.GetFromJsonAsync<GlobalConfig>("/api/config/global") ?? new();
+        } catch { Snackbar.Add("No se pudo conectar con los ajustes del servidor", Severity.Warning); }
+
+        // Cargar Agentes
+        try {
+            agentes = await Http.GetFromJsonAsync<List<Agente>>("/api/agentes");
+        } catch { 
+            Snackbar.Add("Error al listar agentes comerciales", Severity.Warning);
+            // Mock para demo si falla la BD
+            agentes = new List<Agente> { 
+                new Agente { CODAGE = 1, NOMAGE = "Agente Demo 1", CUWAGE = "demo1", JEQAGE = 1 },
+                new Agente { CODAGE = 6, NOMAGE = "XYLOM (Admin)", CUWAGE = "xylom", JEQAGE = 1 }
+            };
+        }
+
+        // Cargar Series (Fijas del 1 al 9)
+        series = Enumerable.Range(1, 9).Select(i => i.ToString()).ToList();
+
+        // Inicializar diccionarios si vienen nulos
+        if (config.IvaConfig == null || !config.IvaConfig.Any())
+        {
+            config.IvaConfig = new Dictionary<string, TaxItem> {
+                { "0", new TaxItem { IVA = 21, RE = 5.2m } },
+                { "1", new TaxItem { IVA = 10, RE = 1.4m } },
+                { "2", new TaxItem { IVA = 4, RE = 0.5m } }
+            };
+        }
+        
+        cargando = false;
+        StateHasChanged();
+    }
+
+    private AgentPermission GetPerm(double? cod)
+    {
+        var key = cod?.ToString() ?? "";
+        if (config.OrderSettings.PermisosAgentes == null) config.OrderSettings.PermisosAgentes = new();
+        
+        if (!config.OrderSettings.PermisosAgentes.ContainsKey(key))
+        {
+            // Migrar desde lista vieja si existe (inicializa por defecto)
+            bool habilitado = config.OrderSettings.AgentesHabilitados?.Contains(cod ?? 0) ?? false;
+            config.OrderSettings.PermisosAgentes[key] = new AgentPermission { AccesoMovil = habilitado };
+        }
+        return config.OrderSettings.PermisosAgentes[key];
+    }
+
+    private void UpdatePerm(double? cod, Action<AgentPermission> action)
+    {
+        var p = GetPerm(cod);
+        action(p);
+        StateHasChanged();
     }
 
     private async Task GuardarConfig()
@@ -88,23 +262,13 @@
         guardando = true;
         try
         {
-            var response = await Http.PostAsJsonAsync("api/config/taxes", taxes);
+            var response = await Http.PostAsJsonAsync("api/config/global", config);
             if (response.IsSuccessStatusCode)
-            {
-                Snackbar.Add("Configuración guardada correctamente.", Severity.Success);
-            }
+                Snackbar.Add("Configuración guardada en appsettings.json", Severity.Success);
             else
-            {
-                Snackbar.Add("No se pudo guardar la configuración.", Severity.Error);
-            }
+                Snackbar.Add("Error al guardar", Severity.Error);
         }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
-        }
-        finally
-        {
-            guardando = false;
-        }
+        catch { Snackbar.Add("Error de conexión", Severity.Error); }
+        finally { guardando = false; }
     }
 }

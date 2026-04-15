@@ -224,6 +224,12 @@ namespace FactuSync.Shared
         public double? HOMPRO { get; set; }
     }
 
+    public class Familia
+    {
+        public string CODFAM { get; set; } = string.Empty;
+        public string DESFAM { get; set; } = string.Empty;
+    }
+
     public class Articulo
     {
         // Propiedades de la UI original para mantener compatibilidad
@@ -619,13 +625,37 @@ namespace FactuSync.Shared
 
         // Imagen 3
         public decimal? PURAGE { get; set; }
-        public double? JEQAGE { get; set; }
+        public double? JEQAGE { get; set; } // Jefe de Equipo (1=Si, 0=No)
         public decimal? CSAAGE { get; set; }
         public double? AGJAGE { get; set; }
         public double? DMWAGE { get; set; }
         public string FOTAGE { get; set; } = string.Empty;
         public string POBAGE { get; set; } = string.Empty;
         public string CTPAGE { get; set; } = string.Empty;
+
+        public bool EsJefe => JEQAGE == 1;
+    }
+
+    public class GlobalConfig
+    {
+        public Dictionary<string, TaxItem> IvaConfig { get; set; } = new();
+        public OrderSettings OrderSettings { get; set; } = new();
+    }
+
+    public class OrderSettings
+    {
+        public bool PermitirDescuentos { get; set; } = true;
+        public string SeriePorDefecto { get; set; } = "1";
+        public bool RestringirPedidosAAgentes { get; set; } = false;
+        public List<double> AgentesHabilitados { get; set; } = new(); // Legacy
+        public Dictionary<string, AgentPermission> PermisosAgentes { get; set; } = new(); // New per-agent config
+    }
+
+    public class AgentPermission
+    {
+        public bool AccesoMovil { get; set; } = true;
+        public bool PermitirDescuentos { get; set; } = true;
+        public string SeriePorDefecto { get; set; } = "1";
     }
 
     public class LoginRequest

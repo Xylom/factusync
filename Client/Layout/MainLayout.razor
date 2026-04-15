@@ -24,7 +24,12 @@
             <MudNavLink Href="/clientes" Icon="@Icons.Material.Filled.PersonSearch" Class="rounded-lg mx-2 mb-1">Clientes</MudNavLink>
             <MudNavLink Href="/pedidos" Icon="@Icons.Material.Filled.Receipt" Class="rounded-lg mx-2 mb-1">Mis Pedidos</MudNavLink>
             <MudNavLink Href="/articulos" Icon="@Icons.Material.Filled.Category" Class="rounded-lg mx-2 mb-1">Catálogo</MudNavLink>
-            <MudNavLink Href="/configuracion" Icon="@Icons.Material.Filled.Settings" Class="rounded-lg mx-2 mb-1">Configuración IVA</MudNavLink>
+            
+            @if (isBoss)
+            {
+                <MudNavLink Href="/configuracion" Icon="@Icons.Material.Filled.AdminPanelSettings" Class="rounded-lg mx-2 mb-1">Centro de Control</MudNavLink>
+            }
+            
             <MudDivider Class="my-4 mx-4" />
             <MudNavLink Href="/" Icon="@Icons.Material.Filled.Logout" Class="rounded-lg mx-2 mb-1">Cerrar Sesión</MudNavLink>
         </MudNavMenu>
@@ -54,6 +59,17 @@
 
 @code {
     private bool _drawerOpen = true;
+    private bool isBoss = false;
+
+    [Inject] IJSRuntime JS { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try {
+            var boss = await JS.InvokeAsync<string>("sessionStorage.getItem", "is_boss");
+            isBoss = boss == "1";
+        } catch { }
+    }
 
     private MudTheme FactuTheme = new MudTheme()
     {

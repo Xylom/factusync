@@ -40,8 +40,11 @@ api.MapGet("/clientes", async (IFactusolService service, string? busqueda) =>
 api.MapGet("/proveedores", async (IFactusolService service) => 
     await service.GetProveedoresAsync());
 
-api.MapGet("/articulos", async (IFactusolService service, string? busqueda, int tarifa = 1) => 
-    await service.GetArticulosAsync(busqueda ?? "", tarifa));
+api.MapGet("/articulos", async (IFactusolService service, string? busqueda, string? familia, int tarifa = 1) => 
+    await service.GetArticulosAsync(busqueda ?? "", tarifa, familia));
+
+api.MapGet("/familias", async (IFactusolService service) => 
+    await service.GetFamiliasAsync());
 
 api.MapPost("/auth/login", async (IFactusolService service, FactuSync.Shared.LoginRequest req) => 
 {
@@ -118,24 +121,32 @@ api.MapGet("/articulos/imagen", (string path, IFactusolService service) =>
 api.MapGet("/pedidos/series", async (IFactusolService service) => Results.Ok(await service.GetSeriesAsync()));
 api.MapGet("/pedidos/siguiente", async (IFactusolService service, string serie) => Results.Ok(await service.GetSiguientePedidoAsync(serie)));
 api.MapGet("/pedidos/almacenes", async (IFactusolService service) => Results.Ok(await service.GetAlmacenesAsync()));
-api.MapGet("/config/taxes", (IConfiguration config) => 
+api.MapGet("/config/global", (IFactusolService service) => 
 {
-    var ivaConfig = config.GetSection("IvaConfig").Get<Dictionary<string, TaxItem>>();
-    return Results.Ok(ivaConfig);
+    var globalConfig = service.GetGlobalConfig();
+    return Results.Ok(globalConfig);
 });
 
-api.MapPost("/config/taxes", async (IFactusolService service, Dictionary<string, TaxItem> newConfig) => 
+api.MapPost("/config/global", async (IFactusolService service, GlobalConfig newConfig) => 
 {
-    var success = await service.UpdateTaxConfigAsync(newConfig);
-    if (success) return Results.Ok(new { message = "Configuración de impuestos armada correctamente" });
+    var success = await service.UpdateGlobalConfigAsync(newConfig);
+    if (success) return Results.Ok(new { message = "Configuración global actualizada correctamente" });
     return Results.BadRequest(new { message = "No se pudo actualizar la configuración" });
 });
+api.MapGet("/pedidos/{serie}/{numero}", async (IFactusolService service, string serie, double numero) => 
+{
+    var p = await service.GetPedidoAsync(serie, numero);
+    return p != null ? Results.Ok(p) : Results.NotFound();
+});
+
 api.MapPost("/pedidos", async (IFactusolService service, Pedido pedido) => 
 {
     var result = await service.CrearPedidoAsync(pedido);
     if (result.Success) return Results.Ok();
     return Results.BadRequest(result.Message);
 });
+
+api.MapGet("/agentes", async (IFactusolService service) => Results.Ok(await service.GetAgentesAsync()));
 
 api.MapDelete("/pedidos", async (IFactusolService service, string serie, double numero) => 
 {

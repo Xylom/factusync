@@ -1,97 +1,209 @@
 @page "/clientes"
 @inject HttpClient Http
+@inject NavigationManager NavManager
 
-<MudText Typo="Typo.h5" Class="mb-4 font-weight-bold" Color="Color.Primary">Listado de Clientes</MudText>
+<MudContainer MaxWidth="MaxWidth.Large" Class="px-4 py-6" Style="background-color: #f8f9fa; min-height: 100vh;">
+    
+    <!-- Search & Filters -->
+    <MudPaper Elevation="0" Class="pa-4 rounded-xl mb-6 shadow-sm" Style="background-color: white; border: 1px solid #e9ecef;">
+        <MudTextField @bind-Value="busqueda" 
+                       Placeholder="Buscar por nombre o código..." 
+                       Variant="Variant.Filled" 
+                       DisableUnderLine="true"
+                       Margin="Margin.Dense"
+                       Class="rounded-lg custom-search-input mb-4"
+                       Adornment="Adornment.Start" 
+                       AdornmentIcon="@Icons.Material.Filled.Search" 
+                       OnKeyUp="@Buscar" 
+                       Immediate="true" />
+        
+        <div class="d-flex overflow-x-auto gap-2 no-scrollbar">
+            <MudChip T="int" Variant="Variant.Filled" Color="@(filtroActivo == 0 ? Color.Primary : Color.Default)" OnClick="@(() => SetFiltro(0))" Style="@(filtroActivo == 0 ? "background-color: #004e92;" : "background-color: #e9ecef; color: #495057;")">TODOS</MudChip>
+            <MudChip T="int" Variant="Variant.Filled" Color="@(filtroActivo == 1 ? Color.Primary : Color.Default)" OnClick="@(() => SetFiltro(1))" Style="@(filtroActivo == 1 ? "background-color: #004e92;" : "background-color: #e9ecef; color: #495057;")">CON PEDIDOS</MudChip>
+            <MudChip T="int" Variant="Variant.Filled" Color="@(filtroActivo == 2 ? Color.Primary : Color.Default)" OnClick="@(() => SetFiltro(2))" Style="@(filtroActivo == 2 ? "background-color: #004e92;" : "background-color: #e9ecef; color: #495057;")">SIN PEDIDOS</MudChip>
+        </div>
+    </MudPaper>
 
-<MudTextField @bind-Value="busqueda" Placeholder="Buscar por nombre..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mb-4" OnKeyUp="@Buscar" Immediate="true"></MudTextField>
-
-@if (cargando)
-{
-    <MudProgressCircular Color="Color.Primary" Indeterminate="true" Class="mx-auto my-4 d-block" />
-}
-else if (clientes != null)
-{
-    <MudGrid>
-        @foreach (var c in clientes)
-        {
-            <MudItem xs="12" sm="6" md="4">
-                <MudCard Elevation="2" Class="rounded-lg">
-                    <MudCardHeader>
-                        <CardHeaderContent>
-                            <MudText Typo="Typo.h6">@c.Nombre</MudText>
-                            <MudText Typo="Typo.body2" Color="Color.Secondary">COD: @c.Codigo | NIF: @c.CifDni</MudText>
-                        </CardHeaderContent>
-                    </MudCardHeader>
-                    <MudCardContent>
-                        <div class="d-flex align-center mb-2">
-                            <MudIcon Icon="@Icons.Material.Filled.Phone" Size="Size.Small" Class="mr-2" />
-                            <MudText Typo="Typo.body2">@c.Telefono</MudText>
-                        </div>
-                        <div class="d-flex align-center">
-                            <MudIcon Icon="@Icons.Material.Filled.Email" Size="Size.Small" Class="mr-2" />
-                            <MudText Typo="Typo.body2">@c.Email</MudText>
-                        </div>
-                    </MudCardContent>
-                    <MudCardActions>
-                        <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="@(() => CrearPedidoParaCliente(c))">Generar Pedido</MudButton>
-                    </MudCardActions>
-                </MudCard>
-            </MudItem>
-        }
+    <!-- Summary Stats Grid -->
+    <MudGrid Spacing="3" Class="mb-8">
+        <MudItem xs="12" sm="4">
+            <MudPaper Elevation="0" Class="pa-4 rounded-xl d-flex align-center justify-space-between" Style="background-color: white; border: 1px solid #f0f2f5;">
+                <div>
+                    <MudText Typo="Typo.caption" Class="font-weight-bold" Style="color: #8a94a6; letter-spacing: 0.5px;">CARTERA TOTAL</MudText>
+                    <MudText Typo="Typo.h5" Class="font-weight-bold" Style="color: #004e92;">@(clientes?.Count ?? 0)</MudText>
+                    <MudText Typo="Typo.caption" Style="color: #2e7d32;">Clientes registrados</MudText>
+                </div>
+                <MudIcon Icon="@Icons.Material.Filled.People" Size="Size.Large" Style="color: #e9ecef;" />
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <MudPaper Elevation="0" Class="pa-4 rounded-xl d-flex align-center justify-space-between" Style="background-color: white; border: 1px solid #f0f2f5;">
+                <div>
+                    <MudText Typo="Typo.caption" Class="font-weight-bold" Style="color: #8a94a6; letter-spacing: 0.5px;">VENTAS (7 DÍAS)</MudText>
+                    <MudText Typo="Typo.h5" Class="font-weight-bold" Style="color: #c62828;">€ @totalVentas7d.ToString("N2")</MudText>
+                    <MudText Typo="Typo.caption" Style="color: #c62828;">Importe neto pedidos</MudText>
+                </div>
+                <MudIcon Icon="@Icons.Material.Filled.ShowChart" Size="Size.Large" Style="color: #e9ecef;" />
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <MudPaper Elevation="0" Class="pa-4 rounded-xl d-flex align-center justify-space-between" Style="background-color: white; border: 1px solid #f0f2f5;">
+                <div>
+                    <MudText Typo="Typo.caption" Class="font-weight-bold" Style="color: #8a94a6; letter-spacing: 0.5px;">CLIENTES CON ACTIVIDAD</MudText>
+                    <MudText Typo="Typo.h5" Class="font-weight-bold" Style="color: #1a1c1e;">@clientesConPedido.Count</MudText>
+                    <MudText Typo="Typo.caption" Style="color: #6c757d;">Con pedidos recientes</MudText>
+                </div>
+                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Large" Style="color: #e9ecef;" />
+            </MudPaper>
+        </MudItem>
     </MudGrid>
-}
+
+    <!-- Clients List -->
+    @if (cargando)
+    {
+        <div class="d-flex justify-center my-10">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+        </div>
+    }
+    else if (clientesFiltrados != null)
+    {
+        <MudStack Spacing="3">
+            @foreach (var c in clientesFiltrados)
+            {
+                var ventas7d = GetVentas7d(c.Codigo);
+                <MudPaper Elevation="0" Class="pa-4 rounded-xl client-card border border-solid" Style="background-color: white; border-color: #f1f3f5;">
+                    <div class="d-flex align-center">
+                        <MudAvatar Color="Color.Primary" Variant="Variant.Filled" Size="Size.Large" Class="mr-4 rounded-lg shadow-sm" Style="background-color: #004e92;">
+                            @(c.Nombre?.Substring(0, Math.Min(2, c.Nombre.Length)).ToUpper())
+                        </MudAvatar>
+                        
+                        <div class="flex-grow-1">
+                            <div class="d-flex justify-space-between align-start">
+                                <div>
+                                    <MudText Typo="Typo.body1" Class="font-weight-bold" Style="color: #1a1c1e;">@c.Nombre</MudText>
+                                    <MudText Typo="Typo.caption" Style="color: #004e92; font-weight: bold;">@c.Codigo <span style="color: #adb5bd;">• @(string.IsNullOrEmpty(c.PROCLI) ? "Sin Ubicación" : c.PROCLI)</span></MudText>
+                                </div>
+                                @if (ventas7d > 0)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled" Style="font-size: 10px; font-weight: bold;">ACTIVO</MudChip>
+                                }
+                                else
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined" Style="font-size: 10px;">SIN ACTIVIDAD</MudChip>
+                                }
+                            </div>
+
+                            <div class="d-flex justify-space-between align-end mt-3">
+                                <div>
+                                    <MudText Typo="Typo.caption" Style="color: #adb5bd; font-weight: 500;">PEDIDOS (ULT. 7 DÍAS)</MudText>
+                                    <MudText Typo="Typo.body1" Class="font-weight-bold" Style="@(ventas7d > 0 ? "color: #2e7d32;" : "color: #6c757d;")">€ @ventas7d.ToString("N2")</MudText>
+                                </div>
+                                <MudIconButton Icon="@Icons.Material.Filled.AddShoppingCart" 
+                                               Variant="Variant.Filled" 
+                                               Color="Color.Primary" 
+                                               Size="Size.Medium" 
+                                               Class="rounded-lg shadow-sm"
+                                               Style="background-color: #004e92;"
+                                               OnClick="@(() => CrearPedidoParaCliente(c))" />
+                            </div>
+                        </div>
+                    </div>
+                </MudPaper>
+            }
+        </MudStack>
+    }
+
+    <div class="pb-10"></div>
+</MudContainer>
+
+<style>
+    .custom-search-input { background-color: #f1f3f5 !important; }
+    .custom-search-input .mud-input-filled.mud-input-underline:after { display: none; }
+    .mud-input-filled.mud-input-underline:before { display: none; }
+    .client-card { transition: all 0.2s; }
+    .client-card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); border-color: #dee2e6 !important; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+</style>
 
 @code {
-    [Inject] private NavigationManager NavManager { get; set; } = default!;
-
     private List<Cliente>? clientes;
+    private List<Pedido>? pedidos;
     private bool cargando = true;
     private string busqueda = "";
+    private int filtroActivo = 0; // 0: Todos, 1: Con Pedidos, 2: Sin Pedidos
     private System.Timers.Timer? debounceTimer;
+
+    private decimal totalVentas7d = 0;
+    private HashSet<string> clientesConPedido = new();
+
+    private IEnumerable<Cliente>? clientesFiltrados => clientes?
+        .Where(c => string.IsNullOrEmpty(busqueda) || c.Nombre.Contains(busqueda, StringComparison.OrdinalIgnoreCase) || c.Codigo.Contains(busqueda))
+        .Where(c => filtroActivo == 0 || (filtroActivo == 1 && clientesConPedido.Contains(c.Codigo)) || (filtroActivo == 2 && !clientesConPedido.Contains(c.Codigo)));
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadClientes();
+        await LoadData();
     }
 
-    private async Task LoadClientes()
+    private async Task LoadData()
     {
         cargando = true;
-        try
-        {
-            clientes = await Http.GetFromJsonAsync<List<Cliente>>($"api/clientes?busqueda={busqueda}");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error fetching: {ex.Message}");
-        }
-        finally
-        {
+        try {
+            var clientesTask = Http.GetFromJsonAsync<List<Cliente>>($"api/clientes?busqueda={busqueda}");
+            var pedidosTask = Http.GetFromJsonAsync<List<Pedido>>("api/pedidos");
+            
+            await Task.WhenAll(clientesTask, pedidosTask);
+            
+            clientes = await clientesTask;
+            pedidos = await pedidosTask;
+            
+            CalcularMetricas();
+        } catch { }
+        finally {
             cargando = false;
             StateHasChanged();
         }
     }
 
+    private void CalcularMetricas()
+    {
+        if (pedidos == null) return;
+        
+        var fechaLimite = DateTime.Today.AddDays(-7);
+        var pedidos7d = pedidos.Where(p => p.Fecha >= fechaLimite).ToList();
+        
+        totalVentas7d = pedidos7d.Sum(p => p.Total);
+        clientesConPedido = new HashSet<string>(pedidos7d.Select(p => p.CLIPCL?.ToString() ?? ""));
+    }
+
+    private decimal GetVentas7d(string codcli)
+    {
+        if (pedidos == null) return 0;
+        var fechaLimite = DateTime.Today.AddDays(-7);
+        return pedidos
+            .Where(p => p.CLIPCL?.ToString() == codcli && p.Fecha >= fechaLimite)
+            .Sum(p => p.Total);
+    }
+
+    private async Task SetFiltro(int f)
+    {
+        filtroActivo = f;
+        StateHasChanged();
+    }
+
     private void Buscar(KeyboardEventArgs e)
     {
-        if (debounceTimer != null)
-        {
-            debounceTimer.Stop();
-            debounceTimer.Dispose();
-        }
+        if (debounceTimer != null) { debounceTimer.Stop(); debounceTimer.Dispose(); }
         debounceTimer = new System.Timers.Timer(500);
-        debounceTimer.Elapsed += async (s, ev) => 
-        {
-            await InvokeAsync(async () => {
-                await LoadClientes();
-            });
+        debounceTimer.Elapsed += async (s, ev) => {
+            await InvokeAsync(async () => await LoadData());
         };
         debounceTimer.Start();
     }
 
     private void CrearPedidoParaCliente(Cliente c)
     {
-        // En una app real usar estado o query string
-        NavManager.NavigateTo($"/pedidos/nuevo?codcli={c.Codigo}&nomcli={Uri.EscapeDataString(c.Nombre)}");
+        NavManager.NavigateTo($"/pedidos/nuevo?codcli={c.Codigo}&nomcli={Uri.EscapeDataString(c.Nombre ?? "")}");
     }
 }

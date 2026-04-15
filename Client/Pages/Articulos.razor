@@ -1,118 +1,211 @@
 @page "/articulos"
 @inject HttpClient Http
+@inject NavigationManager Nav
 
-<MudText Typo="Typo.h5" Class="mb-4 font-weight-bold" Color="Color.Primary">Catálogo de Artículos</MudText>
+<MudContainer MaxWidth="MaxWidth.Large" Class="px-4 py-6" Style="background-color: #f8f9fa; min-height: 100vh;">
+    
+    <!-- Header Section -->
+    <div class="mb-6">
+        <MudText Typo="Typo.overline" Class="font-weight-bold" Style="color: #0056b3; letter-spacing: 1px;">INVENTARIO DE ALMACÉN</MudText>
+        <MudText Typo="Typo.h4" Class="font-weight-bold" Style="color: #1a1c1e;">Catálogo de Productos</MudText>
+        <MudText Typo="Typo.body2" Class="mt-2" Style="color: #6c757d; max-width: 600px;">
+            Explore suministros de calidad empresarial y componentes industriales con sincronización de stock en tiempo real desde el sistema central.
+        </MudText>
+    </div>
 
-<MudTextField @bind-Value="busqueda" Placeholder="Buscar artículos..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mb-4" OnKeyUp="@Buscar" Immediate="true"></MudTextField>
+    <!-- Search & Filters Container -->
+    <MudPaper Elevation="0" Class="pa-4 rounded-xl mb-6 shadow-sm" Style="background-color: white; border: 1px solid #e9ecef;">
+        <MudGrid Spacing="2">
+            <MudItem xs="12">
+                <MudTextField @bind-Value="busqueda" 
+                               Placeholder="Buscar por código o descripción..." 
+                               Variant="Variant.Filled" 
+                               DisableUnderLine="true"
+                               Margin="Margin.Dense"
+                               Class="rounded-lg custom-search-input"
+                               Adornment="Adornment.Start" 
+                               AdornmentIcon="@Icons.Material.Filled.Search" 
+                               OnKeyUp="@HandleKeyUp"
+                               Immediate="true" />
+            </MudItem>
+            <MudItem xs="12" sm="8">
+                <MudSelect T="string" Label="Familia / Categoría" Value="familiaSeleccionada" ValueChanged="@SelectFamilia" Variant="Variant.Filled" DisableUnderLine="true" Margin="Margin.Dense" Class="rounded-lg custom-search-input" Dense="true">
+                    <MudSelectItem Value='""'>Todas las Familias</MudSelectItem>
+                    @if (familias != null)
+                    {
+                        @foreach (var fam in familias)
+                        {
+                            <MudSelectItem Value="@fam.CODFAM">@fam.DESFAM</MudSelectItem>
+                        }
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Class="rounded-lg py-2" OnClick="LoadArticulos" Style="background-color: #004e92; height: 40px;">
+                    BUSCAR
+                </MudButton>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
 
-@if (cargando)
-{
-    <MudProgressCircular Color="Color.Primary" Indeterminate="true" Class="mx-auto my-4 d-block" />
-}
-else if (articulos != null)
-{
-    <MudTable Items="articulos" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="2" Class="rounded-lg">
-        <HeaderContent>
-            <MudTh Style="width: 50px;"></MudTh>
-            <MudTh>Detalles Producto</MudTh>
-            <MudTh Style="width: 80px;">Precio</MudTh>
-        </HeaderContent>
-        <RowTemplate>
-            <MudTd>
-                @if (!string.IsNullOrEmpty(context.IMGART))
-                {
-                    <MudAvatar Image="@($"api/articulos/imagen?path={System.Net.WebUtility.UrlEncode(context.IMGART)}")" Size="Size.Large" Class="cursor-pointer elevation-1" OnClick="@(() => VerImagen(context))" />
-                }
-                else
-                {
-                    <MudAvatar Color="Color.Surface" Size="Size.Large" Variant="Variant.Outlined"><MudIcon Icon="@Icons.Material.Filled.Inventory2" /></MudAvatar>
-                }
-            </MudTd>
-            <MudTd DataLabel="Descripción">
-                <MudText Typo="Typo.body1" Class="font-weight-bold">@context.Descripcion</MudText>
-                <MudStack Row="true" Spacing="2">
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">Ref: @context.Codigo</MudText>
-                    <MudText Typo="Typo.caption" Color="@(context.Stock > 0 ? Color.Success : Color.Error)" Class="font-weight-bold">
-                        Stock: @context.Stock.ToString("N0") uds.
-                    </MudText>
-                </MudStack>
-            </MudTd>
-            <MudTd DataLabel="Precio">
-                <MudText Typo="Typo.body1" Color="Color.Primary" Class="font-weight-bold">@context.PrecioVenta.ToString("N2")</MudText>
-            </MudTd>
-        </RowTemplate>
-        <PagerContent>
-            <MudTablePager HideRowsPerPage="true" />
-        </PagerContent>
-    </MudTable>
-}
+    <!-- Family Chips/Quick Filters -->
+    <div class="d-flex overflow-x-auto pb-4 gap-2 no-scrollbar" style="white-space: nowrap;">
+        <MudChip T="string" Variant="Variant.Filled" Color="@(string.IsNullOrEmpty(familiaSeleccionada) ? Color.Primary : Color.Default)" OnClick="@(() => SelectFamilia(""))" Style="@(string.IsNullOrEmpty(familiaSeleccionada) ? "background-color: #0056b3;" : "background-color: #e9ecef; color: #495057;")">
+            Todos los Ítems
+        </MudChip>
+        @if (familias != null)
+        {
+            @foreach (var fam in familias.Take(6))
+            {
+                <MudChip T="string" Variant="Variant.Filled" Color="@(familiaSeleccionada == fam.CODFAM ? Color.Primary : Color.Default)" OnClick="@(() => SelectFamilia(fam.CODFAM))" Style="@(familiaSeleccionada == fam.CODFAM ? "background-color: #0056b3;" : "background-color: #e9ecef; color: #495057;")">
+                    @fam.DESFAM
+                </MudChip>
+            }
+        }
+    </div>
 
-<MudDialog @bind-Visible="_visibleImagen" Options="_dialogOptions">
-    <TitleContent>
-        <MudText Typo="Typo.h6">@_selectedArticulo?.Descripcion</MudText>
-    </TitleContent>
-    <DialogContent>
-        <div class="d-flex justify-center">
-            <MudImage Src="@($"api/articulos/imagen?path={System.Net.WebUtility.UrlEncode(_selectedArticulo?.IMGART)}")" Alt="Imagen Producto" Fluid="true" Class="rounded-lg" />
+    @if (cargando)
+    {
+        <div class="d-flex justify-center my-10 w-100">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
         </div>
-    </DialogContent>
-    <DialogActions>
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="() => _visibleImagen = false" FullWidth="true" Class="py-3">Cerrar</MudButton>
-    </DialogActions>
-</MudDialog>
+    }
+    else if (articulos == null || !articulos.Any())
+    {
+        <div class="text-center my-10">
+            <MudIcon Icon="@Icons.Material.Filled.SearchOff" Size="Size.Large" Color="Color.Default" />
+            <MudText Typo="Typo.h6" Color="Color.Secondary">No se encontraron productos</MudText>
+        </div>
+    }
+    else
+    {
+        <MudGrid Spacing="3">
+            @foreach (var art in articulos)
+            {
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Elevation="0" Class="rounded-xl h-100 product-card border border-solid" Style="border-color: #f1f3f5;">
+                        <div class="pa-3" style="position: relative;">
+                            @if (art.STOART > 0)
+                            {
+                                <div class="stock-badge">
+                                    <MudText Typo="Typo.caption" Class="font-weight-bold">EN STOCK</MudText>
+                                </div>
+                            }
+                            <div class="image-container rounded-xl overflow-hidden bg-white d-flex align-center justify-center" style="height: 200px;">
+                                @if (!string.IsNullOrEmpty(art.IMGART))
+                                {
+                                    <MudImage Src="@($"api/articulos/imagen?path={System.Net.WebUtility.UrlEncode(art.IMGART)}")" Alt="@art.DESART" Fluid="true" />
+                                }
+                                else
+                                {
+                                    <MudIcon Icon="@Icons.Material.Filled.Inventory2" Size="Size.Large" Color="Color.Default" />
+                                }
+                            </div>
+                        </div>
+                        <MudCardContent Class="pt-0">
+                            <MudText Typo="Typo.caption" Class="font-weight-bold" Style="color: #adb5bd; letter-spacing: 0.5px;">SKU: @art.CODART</MudText>
+                            <MudText Typo="Typo.body1" Class="font-weight-bold mb-1 product-title" Style="color: #1a1c1e;">@art.DESART</MudText>
+                            <MudText Typo="Typo.caption" Class="d-block mb-4 text-truncate-2" Style="color: #6c757d; line-height: 1.2;">
+                                @art.FAMART • Producto sincronizado con inventario central.
+                            </MudText>
+                            
+                            <div class="d-flex justify-space-between align-end">
+                                <div>
+                                    <MudText Typo="Typo.caption" Style="color: #adb5bd;">Precio</MudText>
+                                    <MudText Typo="Typo.h5" Class="font-weight-bold" Style="color: #0056b3;">€ @art.PrecioVenta.ToString("N2")</MudText>
+                                </div>
+                                <MudIconButton Icon="@Icons.Material.Filled.AddShoppingCart" 
+                                               Variant="Variant.Filled" 
+                                               Color="Color.Primary" 
+                                               Size="Size.Medium" 
+                                               Class="rounded-lg shadow-sm"
+                                               Style="background-color: #004e92;"
+                                               OnClick="@(() => Nav.NavigateTo($"/pedidos/nuevo?codart={art.CODART}"))" />
+                            </div>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+
+    <div class="pb-10"></div>
+</MudContainer>
+
+<style>
+    .custom-search-input { background-color: #f1f3f5 !important; }
+    .custom-search-input .mud-input-filled.mud-input-underline:after { display: none; }
+    .mud-input-filled.mud-input-underline:before { display: none; }
+    .product-card { transition: all 0.2s; background-color: white; }
+    .product-card:hover { transform: translateY(-4px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); border-color: #dee2e6 !important; }
+    .stock-badge {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        z-index: 2;
+        background-color: rgba(255, 255, 255, 0.9);
+        color: #1a1c1e;
+        padding: 4px 10px;
+        border-radius: 20px;
+        border: 1px solid #e9ecef;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .image-container img { object-fit: contain; max-height: 100%; width: auto; }
+    .product-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; height: 2.8rem; line-height: 1.4; }
+    .text-truncate-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+</style>
 
 @code {
     private List<Articulo>? articulos;
+    private List<Familia>? familias;
     private bool cargando = true;
     private string busqueda = "";
+    private string familiaSeleccionada = "";
     private System.Timers.Timer? debounceTimer;
-
-    private bool _visibleImagen;
-    private Articulo? _selectedArticulo;
-    private DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Medium, FullWidth = true, NoHeader = false };
-
-    private void VerImagen(Articulo articulo)
-    {
-        _selectedArticulo = articulo;
-        _visibleImagen = true;
-    }
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadMetadata();
         await LoadArticulos();
+    }
+
+    private async Task LoadMetadata()
+    {
+        try {
+            familias = await Http.GetFromJsonAsync<List<Familia>>("api/familias");
+        } catch { }
     }
 
     private async Task LoadArticulos()
     {
         cargando = true;
-        try
-        {
-            articulos = await Http.GetFromJsonAsync<List<Articulo>>($"api/articulos?busqueda={busqueda}");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error fetching: {ex.Message}");
-        }
-        finally
-        {
+        try {
+            var url = $"api/articulos?busqueda={busqueda}";
+            if (!string.IsNullOrEmpty(familiaSeleccionada))
+                url += $"&familia={familiaSeleccionada}";
+                
+            articulos = await Http.GetFromJsonAsync<List<Articulo>>(url);
+        } catch { }
+        finally {
             cargando = false;
             StateHasChanged();
         }
     }
 
-    private void Buscar(KeyboardEventArgs e)
+    private async Task SelectFamilia(string cod)
     {
-        if (debounceTimer != null)
-        {
-            debounceTimer.Stop();
-            debounceTimer.Dispose();
-        }
-        debounceTimer = new System.Timers.Timer(500);
-        debounceTimer.Elapsed += async (s, ev) => 
-        {
-            await InvokeAsync(async () => {
-                await LoadArticulos();
-            });
+        familiaSeleccionada = cod;
+        await LoadArticulos();
+    }
+
+    private void HandleKeyUp(KeyboardEventArgs e)
+    {
+        if (debounceTimer != null) { debounceTimer.Stop(); debounceTimer.Dispose(); }
+        debounceTimer = new System.Timers.Timer(600);
+        debounceTimer.Elapsed += async (s, ev) => {
+            await InvokeAsync(async () => await LoadArticulos());
         };
         debounceTimer.Start();
     }

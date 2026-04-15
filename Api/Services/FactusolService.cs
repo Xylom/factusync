@@ -7,7 +7,8 @@ public interface IFactusolService
 {
     Task<List<Cliente>> GetClientesAsync(string busqueda);
     Task<List<Proveedor>> GetProveedoresAsync();
-    Task<List<Articulo>> GetArticulosAsync(string busqueda, int tarifa = 1);
+    Task<List<Articulo>> GetArticulosAsync(string busqueda, int tarifa = 1, string? familia = null);
+    Task<List<Familia>> GetFamiliasAsync();
     Task<List<Almacen>> GetAlmacenesAsync();
     Task<(bool Success, string Message)> CrearPedidoAsync(Pedido pedido);
     Task<Agente?> LoginAsync(string usuario, string clave);
@@ -19,8 +20,11 @@ public interface IFactusolService
     Task<(bool Success, string Message)> TestConnectionAsync();
     Task<List<string>> GetSeriesAsync();
     Task<double> GetSiguientePedidoAsync(string serie);
-    Task<bool> UpdateTaxConfigAsync(Dictionary<string, TaxItem> newConfig);
+    GlobalConfig GetGlobalConfig();
+    Task<bool> UpdateGlobalConfigAsync(GlobalConfig newConfig);
     Task<(bool Success, string Message)> EliminarPedidoAsync(string serie, double numero);
+    Task<List<Agente>> GetAgentesAsync();
+    Task<Pedido?> GetPedidoAsync(string serie, double numero);
 }
 
 public class FactusolService : IFactusolService
@@ -41,6 +45,81 @@ public class FactusolService : IFactusolService
     }
 
     public string GetDbPath() => _config["FactusolConfig:DbPath"] ?? "";
+
+    public async Task<Pedido?> GetPedidoAsync(string serie, double numero)
+    {
+        try
+        {
+            using var connection = new OleDbConnection(GetConnectionString());
+            await connection.OpenAsync();
+            string query = "SELECT TIPPCL, CODPCL, FECPCL, CLIPCL, CNOPCL, NETPCL, TOTPCL, ALMPCL, FOPPCL, ESTPCL FROM F_PCL WHERE TIPPCL = ? AND CODPCL = ?";
+            using var command = new OleDbCommand(query, connection);
+            command.Parameters.AddWithValue("?", serie);
+            command.Parameters.AddWithValue("?", numero);
+            using var reader = await command.ExecuteReaderAsync();
+            if (await reader.ReadAsync())
+            {
+                var p = new Pedido
+                {
+                    TIPPCL = reader["TIPPCL"].ToString() ?? "",
+                    CODPCL = Convert.ToDouble(reader["CODPCL"]),
+                    Fecha = Convert.ToDateTime(reader["FECPCL"]),
+                    CodigoCliente = reader["CLIPCL"].ToString() ?? "",
+                    CNOPCL = reader["CNOPCL"].ToString() ?? "",
+                    ALMPCL = reader["ALMPCL"].ToString() ?? "",
+                    FOPPCL = reader["FOPPCL"].ToString() ?? "",
+                    ESTPCL = reader["ESTPCL"] != DBNull.Value ? Convert.ToInt32(reader["ESTPCL"]) : 0,
+                    Total = reader["TOTPCL"] != DBNull.Value ? Convert.ToDecimal(reader["TOTPCL"]) : 0
+                };
+                p.Lineas = await GetPedidoLineasAsync(serie, numero);
+                return p;
+            }
+        }
+        catch (Exception ex) { Console.WriteLine($"Error GetPedido: {ex.Message}"); }
+        return null;
+    }
+
+    public async Task<List<Agente>> GetAgentesAsync()
+    {
+        var agentes = new List<Agente>();
+        try
+        {
+            using var connection = new OleDbConnection(GetConnectionString());
+            await connection.OpenAsync();
+            string query = "SELECT * FROM F_AGE ORDER BY NOMAGE";
+            using var command = new OleDbCommand(query, connection);
+            using var reader = await command.ExecuteReaderAsync();
+            
+            // Obtener índices de columnas para ser seguros ante cambios de esquema
+            var columns = new HashSet<string>(Enumerable.Range(0, reader.FieldCount).Select(i => reader.GetName(i).ToUpper()));
+
+            while (await reader.ReadAsync())
+            {
+                var agente = new Agente
+                {
+                    CODAGE = reader["CODAGE"] != DBNull.Value ? Convert.ToDouble(reader["CODAGE"]) : null,
+                    NOMAGE = reader["NOMAGE"].ToString()?.Trim() ?? "",
+                    CUWAGE = columns.Contains("CUWAGE") ? reader["CUWAGE"].ToString()?.Trim() ?? "" : ""
+                };
+
+                // Lectura segura de SUWAGE (Acceso Internet)
+                if (columns.Contains("SUWAGE") && reader["SUWAGE"] != DBNull.Value)
+                    agente.SUWAGE = Convert.ToDouble(reader["SUWAGE"]);
+                
+                // Lectura segura de JEQAGE (Es Jefe)
+                if (columns.Contains("JEQAGE") && reader["JEQAGE"] != DBNull.Value)
+                    agente.JEQAGE = Convert.ToDouble(reader["JEQAGE"]);
+
+                agentes.Add(agente);
+            }
+        }
+        catch (Exception ex) 
+        { 
+            Console.WriteLine($"[DB ERROR] Error en GetAgentesAsync: {ex.Message}"); 
+            Console.WriteLine($"[DB STACK] {ex.StackTrace}");
+        }
+        return agentes;
+    }
 
     public async Task<List<Cliente>> GetClientesAsync(string busqueda)
     {
@@ -106,6 +185,32 @@ public class FactusolService : IFactusolService
         return clientes;
     }
 
+    public async Task<List<Familia>> GetFamiliasAsync()
+    {
+        var familias = new List<Familia>();
+        try
+        {
+            using var connection = new OleDbConnection(GetConnectionString());
+            await connection.OpenAsync();
+            string query = "SELECT CODFAM, DESFAM FROM F_FAM ORDER BY DESFAM";
+            using var command = new OleDbCommand(query, connection);
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                familias.Add(new Familia
+                {
+                    CODFAM = reader["CODFAM"].ToString()?.Trim() ?? "",
+                    DESFAM = reader["DESFAM"].ToString()?.Trim() ?? ""
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error fetching familias: {ex.Message}");
+        }
+        return familias;
+    }
+
     public async Task<List<Proveedor>> GetProveedoresAsync()
     {
         var provs = new List<Proveedor>();
@@ -135,7 +240,7 @@ public class FactusolService : IFactusolService
         return provs;
     }
 
-    public async Task<List<Articulo>> GetArticulosAsync(string busqueda, int tarifa = 1)
+    public async Task<List<Articulo>> GetArticulosAsync(string busqueda, int tarifa = 1, string? familia = null)
     {
         var articulos = new List<Articulo>();
         try
@@ -164,14 +269,25 @@ public class FactusolService : IFactusolService
             if (!string.IsNullOrEmpty(busqueda))
             {
                 query += " WHERE (F_ART.DESART LIKE ? OR F_ART.CODART LIKE ?)";
+                if (!string.IsNullOrEmpty(familia))
+                    query += " AND F_ART.FAMART = ?";
+            }
+            else if (!string.IsNullOrEmpty(familia))
+            {
+                query += " WHERE F_ART.FAMART = ?";
             }
 
             using var command = new OleDbCommand(query, connection);
-            // Los únicos parámetros '?' que quedan son los filtros LIKE de búsqueda
+            // Los únicos parámetros '?' que quedan son los filtros LIKE de búsqueda y FAMART
             if (!string.IsNullOrEmpty(busqueda))
             {
                 command.Parameters.Add("?", OleDbType.VarWChar).Value = $"%{busqueda}%";
                 command.Parameters.Add("?", OleDbType.VarWChar).Value = $"%{busqueda}%";
+            }
+            
+            if (!string.IsNullOrEmpty(familia))
+            {
+                command.Parameters.Add("?", OleDbType.VarWChar).Value = familia;
             }
 
             // Consultar si la tarifa incluye IVA (campo IVATAR en F_TAR)
@@ -265,8 +381,8 @@ public class FactusolService : IFactusolService
             using var connection = new OleDbConnection(GetConnectionString());
             await connection.OpenAsync();
             
-            // Traemos los ultimos 50 pedidos para el historial
-            string query = "SELECT TOP 50 TIPPCL, CODPCL, FECPCL, CNOPCL, TOTPCL FROM F_PCL ORDER BY FECPCL DESC, CODPCL DESC";
+            // Traemos los pedidos recientes para sincronización y estadísticas
+            string query = "SELECT TIPPCL, CODPCL, FECPCL, CNOPCL, TOTPCL, CLIPCL FROM F_PCL ORDER BY FECPCL DESC, CODPCL DESC";
             
             using var command = new OleDbCommand(query, connection);
             using var reader = await command.ExecuteReaderAsync();
@@ -278,7 +394,8 @@ public class FactusolService : IFactusolService
                     CODPCL = Convert.ToDouble(reader["CODPCL"]),
                     FECPCL = reader["FECPCL"] != DBNull.Value ? Convert.ToDateTime(reader["FECPCL"]) : DateTime.Now,
                     CNOPCL = reader["CNOPCL"].ToString() ?? "",
-                    TOTPCL = reader["TOTPCL"] != DBNull.Value ? Convert.ToDecimal(reader["TOTPCL"]) : 0
+                    TOTPCL = reader["TOTPCL"] != DBNull.Value ? Convert.ToDecimal(reader["TOTPCL"]) : 0,
+                    CLIPCL = reader["CLIPCL"] != DBNull.Value ? Convert.ToDouble(reader["CLIPCL"]) : null
                 });
             }
         }
@@ -323,24 +440,8 @@ public class FactusolService : IFactusolService
     }
     public async Task<List<string>> GetSeriesAsync()
     {
-        var series = new List<string>();
-        try
-        {
-            using var connection = new OleDbConnection(GetConnectionString());
-            await connection.OpenAsync();
-            // Usamos CStr para normalizar el tipo de dato de la Serie
-            string query = "SELECT DISTINCT CStr(TIPPCL) FROM F_PCL WHERE TIPPCL IS NOT NULL ORDER BY CStr(TIPPCL) ASC";
-            using var command = new OleDbCommand(query, connection);
-            using var reader = await command.ExecuteReaderAsync();
-            while (await reader.ReadAsync())
-            {
-                var s = reader[0].ToString()?.Trim() ?? "";
-                if (!string.IsNullOrEmpty(s)) series.Add(s);
-            }
-            if (series.Count == 0) series.Add("1");
-        }
-        catch { series.Add("1"); }
-        return series;
+        // El usuario indica que las series son fijas del 1 al 9
+        return await Task.FromResult(Enumerable.Range(1, 9).Select(i => i.ToString()).ToList());
     }
 
     public async Task<double> GetSiguientePedidoAsync(string serie)
@@ -616,7 +717,7 @@ public class FactusolService : IFactusolService
             await connection.OpenAsync();
 
             // Usamos TRIM para limpiar espacios que Access suele meter al final de los campos de texto
-            string query = "SELECT CODAGE, NOMAGE, CUWAGE, CAWAGE, SUWAGE FROM F_AGE WHERE TRIM(CUWAGE) = ? AND TRIM(CAWAGE) = ?";
+            string query = "SELECT CODAGE, NOMAGE, CUWAGE, CAWAGE, SUWAGE, JEQAGE FROM F_AGE WHERE TRIM(CUWAGE) = ? AND TRIM(CAWAGE) = ?";
             using var command = new OleDbCommand(query, connection);
             command.Parameters.AddWithValue("?", usuario.Trim());
             command.Parameters.AddWithValue("?", clave.Trim());
@@ -630,12 +731,28 @@ public class FactusolService : IFactusolService
                     NOMAGE = reader["NOMAGE"].ToString()?.Trim() ?? "",
                     CUWAGE = reader["CUWAGE"].ToString()?.Trim() ?? "",
                     CAWAGE = reader["CAWAGE"].ToString()?.Trim() ?? "",
-                    SUWAGE = reader["SUWAGE"] != DBNull.Value ? Convert.ToDouble(reader["SUWAGE"]) : 0
+                    SUWAGE = reader["SUWAGE"] != DBNull.Value ? Convert.ToDouble(reader["SUWAGE"]) : 0,
+                    JEQAGE = reader["JEQAGE"] != DBNull.Value ? Convert.ToDouble(reader["JEQAGE"]) : 0
                 };
                 
-                // Verificar si tiene el acceso web activado (SUWAGE = 1)
+                // 1. Verificar si tiene el acceso web activado en Factusol (SUWAGE = 1)
                 if (agente.TieneAccesoWeb)
                 {
+                    // 2. Verificar restricciones adicionales en la configuración global
+                    var config = GetGlobalConfig();
+                    if (config.OrderSettings.RestringirPedidosAAgentes)
+                    {
+                        var key = agente.CODAGE?.ToString() ?? "";
+                        if (config.OrderSettings.PermisosAgentes.TryGetValue(key, out var perm))
+                        {
+                            if (!perm.AccesoMovil) return null; // Acceso denegado por config
+                        }
+                        else
+                        {
+                            // Si no está en el diccionario y hay restricción, denegar
+                            return null;
+                        }
+                    }
                     return agente;
                 }
             }
@@ -694,7 +811,40 @@ public class FactusolService : IFactusolService
         return inputPassword == configuredMaster;
     }
 
-    public async Task<bool> UpdateTaxConfigAsync(Dictionary<string, TaxItem> newConfig)
+    public GlobalConfig GetGlobalConfig()
+    {
+        var config = new GlobalConfig();
+        try {
+            // Cargar Impuestos
+            var ivaSection = _config.GetSection("IvaConfig");
+            if (ivaSection.Exists())
+            {
+                config.IvaConfig = ivaSection.Get<Dictionary<string, TaxItem>>() ?? new();
+            }
+
+            // Cargar Ajustes de Pedido
+            var orderSection = _config.GetSection("OrderSettings");
+            if (orderSection.Exists())
+            {
+                config.OrderSettings = orderSection.Get<OrderSettings>() ?? new();
+            }
+        } catch (Exception ex) {
+            Console.WriteLine($"[CONFIG] Error leyendo appsettings: {ex.Message}");
+        }
+
+        // Garantizar que IvaConfig tenga al menos los índices básicos si está vacío
+        if (config.IvaConfig == null || !config.IvaConfig.Any()) {
+            config.IvaConfig = new Dictionary<string, TaxItem> {
+                { "0", new TaxItem { IVA = 21, RE = 5.2m } },
+                { "1", new TaxItem { IVA = 10, RE = 1.4m } },
+                { "2", new TaxItem { IVA = 4, RE = 0.5m } }
+            };
+        }
+
+        return config;
+    }
+
+    public async Task<bool> UpdateGlobalConfigAsync(GlobalConfig newConfig)
     {
         string[] filesToUpdate = { "appsettings.json", "appsettings.Development.json" };
         bool totalSuccess = false;
@@ -711,9 +861,12 @@ public class FactusolService : IFactusolService
                 
                 if (json != null)
                 {
-                    // Create or updated IvaConfig section
-                    var ivaConfigNode = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(newConfig));
-                    json["IvaConfig"] = ivaConfigNode;
+                    // Update Sections
+                    var ivaNode = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(newConfig.IvaConfig));
+                    var orderNode = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(newConfig.OrderSettings));
+                    
+                    json["IvaConfig"] = ivaNode;
+                    json["OrderSettings"] = orderNode;
                     
                     await File.WriteAllTextAsync(configPath, json.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
                     totalSuccess = true;
@@ -721,7 +874,7 @@ public class FactusolService : IFactusolService
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error actualizando impuestos en {fileName}: {ex.Message}");
+                Console.WriteLine($"Error actualizando configuración global en {fileName}: {ex.Message}");
             }
         }
 
