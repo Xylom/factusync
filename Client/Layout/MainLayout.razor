@@ -8,7 +8,9 @@
 <MudLayout>
     <MudAppBar Elevation="0" Style="background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(8px); color: var(--mud-palette-primary);">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@ToggleDrawer" />
-        <MudText Typo="Typo.h5" Class="ml-3 font-weight-bold" Style="letter-spacing: -1px;">FactuSync <span style="color: var(--mud-palette-text-secondary); font-weight: 400;">Mobile</span></MudText>
+        <div class="d-flex align-center ml-3">
+            <img src="images/logo_horizontal.png" alt="FactuSync" style="height: 40px;" />
+        </div>
         <MudSpacer />
         <MudAvatar Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">XY</MudAvatar>
     </MudAppBar>
@@ -22,6 +24,7 @@
             <MudNavLink Href="/clientes" Icon="@Icons.Material.Filled.PersonSearch" Class="rounded-lg mx-2 mb-1">Clientes</MudNavLink>
             <MudNavLink Href="/pedidos" Icon="@Icons.Material.Filled.Receipt" Class="rounded-lg mx-2 mb-1">Mis Pedidos</MudNavLink>
             <MudNavLink Href="/articulos" Icon="@Icons.Material.Filled.Category" Class="rounded-lg mx-2 mb-1">Catálogo</MudNavLink>
+            <MudNavLink Href="/configuracion" Icon="@Icons.Material.Filled.Settings" Class="rounded-lg mx-2 mb-1">Configuración IVA</MudNavLink>
             <MudDivider Class="my-4 mx-4" />
             <MudNavLink Href="/" Icon="@Icons.Material.Filled.Logout" Class="rounded-lg mx-2 mb-1">Cerrar Sesión</MudNavLink>
         </MudNavMenu>

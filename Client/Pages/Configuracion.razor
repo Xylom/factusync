@@ -1,0 +1,110 @@
+@page "/configuracion"
+@inject HttpClient Http
+@inject ISnackbar Snackbar
+@using FactuSync.Shared
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-6">
+    <div class="mb-8">
+        <MudText Typo="Typo.h4" Class="font-weight-bold" Color="Color.Primary">Configuración de Impuestos</MudText>
+        <MudText Typo="Typo.body1" Color="Color.Secondary">Defina los porcentajes de IVA y Recargo de Equivalencia para cada índice de Factusol.</MudText>
+    </div>
+
+    @if (taxes == null)
+    {
+        <div class="d-flex justify-center pa-10">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+        </div>
+    }
+    else
+    {
+        <MudGrid>
+            @foreach (var key in taxes.Keys.OrderBy(k => k))
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudPaper Elevation="4" Class="pa-4 rounded-xl border-l-8 border-solid" Style="border-color: var(--mud-palette-primary);">
+                        <MudText Typo="Typo.h6" Class="mb-2">Índice #@key</MudText>
+                        <MudNumericField @bind-Value="taxes[key].IVA" Label="IVA %" Variant="Variant.Outlined" Adornment="Adornment.End" AdornmentText="%" Format="N2" Class="mb-2" />
+                        <MudNumericField @bind-Value="taxes[key].RE" Label="RE %" Variant="Variant.Outlined" Adornment="Adornment.End" AdornmentText="%" Format="N2" />
+                    </MudPaper>
+                </MudItem>
+            }
+        </MudGrid>
+
+        <div class="d-flex justify-end mt-8">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" StartIcon="@Icons.Material.Filled.Save" OnClick="GuardarConfig" Disabled="guardando">
+                @if (guardando)
+                {
+                    <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true" />
+                    <MudText Class="ms-2">Guardando...</MudText>
+                }
+                else
+                {
+                    <text>Guardar Configuración</text>
+                }
+            </MudButton>
+        </div>
+    }
+
+    <MudAlert Severity="Severity.Info" Class="mt-10 rounded-lg">
+        <b>Nota Técnica:</b> Estos valores se guardan en el archivo <code>appsettings.json</code> del servidor y afectan el cálculo de todos los pedidos nuevos creados desde la aplicación. Los índices corresponden al campo <code>IVAART</code> de la tabla de artículos en Factusol.
+    </MudAlert>
+</MudContainer>
+
+@code {
+    private Dictionary<string, TaxItemClient>? taxes;
+    private bool guardando = false;
+
+    public class TaxItemClient 
+    { 
+        public decimal IVA { get; set; } 
+        public decimal RE { get; set; } 
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            taxes = await Http.GetFromJsonAsync<Dictionary<string, TaxItemClient>>("api/config/taxes");
+            
+            // Si el servidor devuelve vacío o nulo, inicializamos con los 3 índices estándar
+            if (taxes == null || !taxes.Any())
+            {
+                taxes = new Dictionary<string, TaxItemClient>
+                {
+                    { "1", new TaxItemClient { IVA = 21, RE = 5.2m } },
+                    { "2", new TaxItemClient { IVA = 10, RE = 1.4m } },
+                    { "3", new TaxItemClient { IVA = 4, RE = 0.5m } }
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error cargando configuración: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task GuardarConfig()
+    {
+        guardando = true;
+        try
+        {
+            var response = await Http.PostAsJsonAsync("api/config/taxes", taxes);
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add("Configuración guardada correctamente.", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("No se pudo guardar la configuración.", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+}

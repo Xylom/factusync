@@ -40,12 +40,13 @@ else
         </MudGrid>
     </MudCard>
 
-    <MudText Typo="Typo.h6" Class="mb-2 font-weight-bold" Color="Color.Primary">Añadir Artículos</MudText>
+    <MudText Typo="Typo.h6" Class="mb-2 font-weight-bold" Color="Color.Primary">Añadir Artículos (v1.1)</MudText>
     <div class="d-flex align-end mb-4">
         <MudAutocomplete T="Articulo" Label="Buscar Artículo" @bind-Value="articuloSeleccionado" SearchFunc="@BuscarArticulos" 
-                         ToStringFunc="@(a => a == null ? null : $"{a.Descripcion} - ${a.PrecioVenta}")" 
+                         ToStringFunc="@(a => a?.DisplayText)" 
                          ResetValueOnEmptyText="true" CoerceText="true" CoerceValue="true" Class="flex-grow-1" />
-        <MudNumericField @bind-Value="cantidadSeleccionada" Label="Cant." Variant="Variant.Outlined" Min="1" Class="ml-2" Style="max-width: 80px;" />
+        <MudNumericField @bind-Value="cantidadSeleccionada" Label="Cant." Variant="Variant.Outlined" Min="0.001M" Class="ml-2" Style="max-width: 70px;" />
+        <MudNumericField @bind-Value="descuentoSeleccionado" Label="Dto%" Variant="Variant.Outlined" Min="0" Max="100" Class="ml-2" Style="max-width: 70px;" />
         <MudIconButton Icon="@Icons.Material.Filled.Add" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Medium" Class="ml-2 mb-1" OnClick="AgregarLinea" />
     </div>
 
@@ -55,12 +56,16 @@ else
             <HeaderContent>
                 <MudTh>Artículo</MudTh>
                 <MudTh>Cant.</MudTh>
+                <MudTh>Precio</MudTh>
+                <MudTh>Dto %</MudTh>
                 <MudTh>Total</MudTh>
                 <MudTh></MudTh>
             </HeaderContent>
             <RowTemplate>
                 <MudTd DataLabel="Artículo">@context.DESLPC</MudTd>
                 <MudTd DataLabel="Cant.">@context.CANLPC</MudTd>
+                <MudTd DataLabel="Precio">@((context.PRELPC ?? 0).ToString("N2"))</MudTd>
+                <MudTd DataLabel="Dto">@((context.DT1LPC ?? 0).ToString("N1"))%</MudTd>
                 <MudTd DataLabel="Total">@((context.TOTLPC ?? 0).ToString("N2"))</MudTd>
                 <MudTd>
                     <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => EliminarLinea(context))" />
@@ -90,13 +95,15 @@ else
     private Pedido pedido = new Pedido { TIPPCL = "1" };
     private Articulo? articuloSeleccionado;
     private decimal cantidadSeleccionada = 1;
+    private decimal descuentoSeleccionado = 0;
     private bool guardando = false;
     private List<string> seriesDisponibles = new();
     private List<Almacen> almacenesDisponibles = new();
-    private Dictionary<string, TaxItemClient>? taxConfig;
+    private Dictionary<string, TaxItem>? taxConfig;
 
     protected override async Task OnInitializedAsync()
     {
+        Console.WriteLine("NuevoPedido: Iniciando...");
         if (!string.IsNullOrEmpty(CodigoClienteQuery))
         {
             pedido.CodigoCliente = CodigoClienteQuery;
@@ -107,17 +114,30 @@ else
         {
             seriesDisponibles = await Http.GetFromJsonAsync<List<string>>("api/pedidos/series") ?? new List<string> { "1" };
             almacenesDisponibles = await Http.GetFromJsonAsync<List<Almacen>>("api/pedidos/almacenes") ?? new List<Almacen>();
-            taxConfig = await Http.GetFromJsonAsync<Dictionary<string, TaxItemClient>>("api/config/taxes");
+            
+            try {
+                taxConfig = await Http.GetFromJsonAsync<Dictionary<string, TaxItem>>("api/config/taxes");
+            } catch (Exception ex) {
+                Console.WriteLine($"Error cargando impuestos: {ex.Message}");
+            }
             
             // Si venimos de la búsqueda, intentamos obtener los datos extras del cliente (como el Recargo)
             if (!string.IsNullOrEmpty(pedido.CodigoCliente))
             {
+                // Buscamos específicamente por el ID del cliente para no traer otros con nombre similar
                 var clientes = await Http.GetFromJsonAsync<List<Cliente>>($"api/clientes?busqueda={pedido.CodigoCliente}");
-                var cli = clientes?.FirstOrDefault(c => c.Codigo == pedido.CodigoCliente);
+                // PRIORIDAD: Buscar coincidencia exacta de código
+                var cli = clientes?.FirstOrDefault(c => c.Codigo == pedido.CodigoCliente) 
+                       ?? clientes?.FirstOrDefault();
+
                 if (cli != null) 
                 {
                     pedido.REQCLI = cli.REQCLI;
                     pedido.TARCLI = cli.TARCLI;
+                    pedido.FOPPCL = cli.FPACLI; // Forma de Pago predeterminada
+                    descuentoSeleccionado = cli.DT1CLI ?? 0; // Descuento predeterminado del cliente
+                    pedido.NombreCliente = cli.Nombre; // Asegurar nombre fiscal
+                    Console.WriteLine($"Cliente Cargado: {cli.Nombre} | Tarifa: {cli.TARCLI} | FP: {pedido.FOPPCL} | DTO: {descuentoSeleccionado}");
                 }
             }
 
@@ -130,10 +150,16 @@ else
                 await CargarSiguienteNumero();
             }
         }
-        catch { 
+        catch (Exception ex)
+        { 
+            Console.WriteLine($"Error general init: {ex.Message}");
             seriesDisponibles = new List<string> { "1" }; 
             almacenesDisponibles = new List<Almacen> { new Almacen { Codigo = "GEN", Nombre = "GENERAL" } };
+            pedido.ALMPCL = "GEN";
         }
+        
+        Console.WriteLine("NuevoPedido: Fin init.");
+        StateHasChanged();
     }
 
     private async Task OnSerieChanged(string nuevaSerie)
@@ -155,16 +181,19 @@ else
     {
         if (string.IsNullOrEmpty(val) || val.Length < 2) return new List<Articulo>();
         
-        // Pasamos la tarifa del pedido actual para obtener los precios correctos
-        int tar = (int)pedido.TARCLI;
-        if (tar == 0) tar = 1; // Default
-        
         try
         {
-            return await Http.GetFromJsonAsync<List<Articulo>>($"api/articulos?busqueda={val}&tarifa={tar}", token) ?? new List<Articulo>();
+            // Pasamos la tarifa del pedido actual para obtener los precios correctos
+            int tar = (int)pedido.TARCLI;
+            if (tar == 0) tar = 1; // Default
+            
+            var res = await Http.GetFromJsonAsync<List<Articulo>>($"api/articulos?busqueda={val}&tarifa={tar}", token);
+            return res ?? new List<Articulo>();
         }
-        catch
+        catch (OperationCanceledException) { return new List<Articulo>(); }
+        catch (Exception ex)
         {
+            Console.WriteLine($"Error buscando artículos: {ex.Message}");
             return new List<Articulo>();
         }
     }
@@ -181,24 +210,38 @@ else
                 ivaPorc = taxConfig[idxKey].IVA;
             }
             
-            // Cálculo de base imponible (Factusol guarda bases en TOTLPC)
-            decimal totalLineaConIva = articuloSeleccionado.PrecioVenta * cantidadSeleccionada;
-            decimal baseImponible = Math.Round(totalLineaConIva / (1 + (ivaPorc / 100)), 2);
+            // Cálculo de base imponible
+            decimal baseUnitLin = articuloSeleccionado.PrecioVenta;
+            
+            if (articuloSeleccionado.PrecioConIva) 
+            {
+                baseUnitLin = Math.Round(articuloSeleccionado.PrecioVenta / (1 + (ivaPorc / 100)), 2);
+            }
+            
+            decimal totLpc = baseUnitLin * cantidadSeleccionada;
+            // Aplicar descuento si existe
+            if (descuentoSeleccionado > 0)
+            {
+                totLpc = totLpc * (1 - (descuentoSeleccionado / 100));
+            }
 
             var nuevaLinea = new PedidoLinea
             {
                 ARTLPC = articuloSeleccionado.Codigo,
                 DESLPC = articuloSeleccionado.Descripcion,
                 CANLPC = cantidadSeleccionada,
-                PRELPC = Math.Round(articuloSeleccionado.PrecioVenta / (1 + (ivaPorc / 100)), 2),
-                TOTLPC = baseImponible,
+                PRELPC = baseUnitLin,
+                DT1LPC = (double)descuentoSeleccionado,
+                TOTLPC = totLpc,
                 IVALPC = (double)ivaPorc,
-                IvaIndex = articuloSeleccionado.IvaIndex
+                IvaIndex = articuloSeleccionado.IvaIndex,
+                COSLPC = articuloSeleccionado.PCOART // Guardar el costo en la línea
             };
             
             pedido.Lineas.Add(nuevaLinea);
             articuloSeleccionado = null;
             cantidadSeleccionada = 1;
+            // Volver al descuento por defecto del cliente si existe
             ActualizarTotal();
         }
     }
@@ -236,8 +279,6 @@ else
         
         pedido.Total = netoAcum + ivaAcum + reAcum;
     }
-
-    public class TaxItemClient { public decimal IVA { get; set; } public decimal RE { get; set; } }
 
     private async Task GuardarPedido()
     {

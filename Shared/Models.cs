@@ -7,7 +7,7 @@ namespace FactuSync.Shared
     {
         // Propiedades para la UI
         public string Codigo => CODCLI?.ToString() ?? string.Empty;
-        public string Nombre => !string.IsNullOrEmpty(NOCCLI) ? NOCCLI : NOFCLI; // Comercial o fiscal
+        public string Nombre => !string.IsNullOrEmpty(NOFCLI) ? NOFCLI : NOCCLI; // Muestra el Nombre Fiscal prioritariamente
         public string CifDni => NIFCLI;
         public string Telefono => TELCLI;
         public string Email => EMACLI;
@@ -231,6 +231,9 @@ namespace FactuSync.Shared
         public string Descripcion => DESART;
         public string Familia => FAMART;
         public decimal PrecioVenta { get; set; } // Retenido para mapeo con F_TAR
+        public bool PrecioConIva { get; set; }
+        public string DisplayText => $"{CODART} - {(Descripcion ?? "Sin nombre")} | ${PrecioVenta:N2}";
+        public decimal? PRELTA_TAR_RAW { get; set; }
         public decimal Stock => Convert.ToDecimal(STOART ?? 0); 
         public int IvaIndex { get; set; }
 
@@ -246,7 +249,7 @@ namespace FactuSync.Shared
         public double? PHAART { get; set; }
         public double? TIVART { get; set; }
         public decimal? PCOART { get; set; }
-        public decimal? DTOART { get; set; }
+        public decimal? DT0ART { get; set; }
         public decimal? DT1ART { get; set; }
         public decimal? DT2ART { get; set; }
         public DateTime? FALART { get; set; }
@@ -428,7 +431,7 @@ namespace FactuSync.Shared
         public decimal? PRET1PCL { get; set; } // Porcentaje de retención
         public decimal? IRET1PCL { get; set; } // Importe de retención
         public decimal? TOTPCL { get; set; }
-        public string FORPCL { get; set; } = string.Empty;
+        public string FOPPCL { get; set; } = string.Empty; // Confirmado por captura de pantalla del usuario
         public string PENPCL { get; set; } = string.Empty;
         public double? PRTPCL { get; set; }
         public string TPOPCL { get; set; } = string.Empty;
@@ -641,4 +644,6 @@ namespace FactuSync.Shared
     {
         public string Password { get; set; } = string.Empty;
     }
+
+    public class TaxItem { public decimal IVA { get; set; } public decimal RE { get; set; } }
 }

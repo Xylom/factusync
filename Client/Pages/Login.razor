@@ -17,8 +17,8 @@
                            OnClick="() => currentMode = ViewMode.MasterAuth" />
 
             <div class="d-flex flex-column align-center mb-6">
-                <MudIcon Icon="@Icons.Material.Filled.Sync" Color="Color.Primary" Size="Size.Large" Class="mb-2" Style="font-size: 4rem;" />
-                <MudText Typo="Typo.h4" Color="Color.Primary" Class="font-weight-bold">FactuSync</MudText>
+                <img src="images/logo_icon.png" alt="FactuSync" style="width: 120px; height: 120px; border-radius: 20px;" class="mb-4 elevation-4" />
+                <MudText Typo="Typo.h4" Color="Color.Primary" Class="font-weight-bold mb-2">FactuSync</MudText>
                 <MudText Typo="Typo.body2" Color="Color.Dark">Accede con tu usuario de Factusol</MudText>
             </div>
 
@@ -160,7 +160,7 @@
     
     private ViewMode currentMode = ViewMode.Login;
     
-    private LoginRequest loginModel = new();
+    private LoginRequest loginModel = new LoginRequest { Usuario = "xylom", Clave = "2030" };
     private ValidateMasterRequest masterAuthModel = new();
     private UpdateDbRequest dbModel = new();
     
@@ -183,10 +183,6 @@
         isTesting = true;
         try
         {
-            // Primero guardamos temporalmente para que el servidor use la nueva ruta en el test
-            // aunque sea en memoria o enviandola. Por simplicidad, el test usa lo que hay en el servidor.
-            // Asi que para probar una ruta NUEVA, primero hay que Guardarla.
-            
             var response = await Http.GetAsync("api/settings/test-connection");
             var result = await response.Content.ReadFromJsonAsync<TestResponse>();
             if (response.IsSuccessStatusCode)

@@ -123,6 +123,13 @@ api.MapGet("/config/taxes", (IConfiguration config) =>
     var ivaConfig = config.GetSection("IvaConfig").Get<Dictionary<string, TaxItem>>();
     return Results.Ok(ivaConfig);
 });
+
+api.MapPost("/config/taxes", async (IFactusolService service, Dictionary<string, TaxItem> newConfig) => 
+{
+    var success = await service.UpdateTaxConfigAsync(newConfig);
+    if (success) return Results.Ok(new { message = "Configuración de impuestos armada correctamente" });
+    return Results.BadRequest(new { message = "No se pudo actualizar la configuración" });
+});
 api.MapPost("/pedidos", async (IFactusolService service, Pedido pedido) => 
 {
     var result = await service.CrearPedidoAsync(pedido);
@@ -130,7 +137,12 @@ api.MapPost("/pedidos", async (IFactusolService service, Pedido pedido) =>
     return Results.BadRequest(result.Message);
 });
 
+api.MapDelete("/pedidos", async (IFactusolService service, string serie, double numero) => 
+{
+    var result = await service.EliminarPedidoAsync(serie, numero);
+    if (result.Success) return Results.Ok(new { message = result.Message });
+    return Results.BadRequest(new { message = result.Message });
+});
+
 app.MapFallbackToFile("index.html");
 app.Run();
-
-public class TaxItem { public decimal IVA { get; set; } public decimal RE { get; set; } }

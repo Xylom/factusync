@@ -19,6 +19,8 @@ public interface IFactusolService
     Task<(bool Success, string Message)> TestConnectionAsync();
     Task<List<string>> GetSeriesAsync();
     Task<double> GetSiguientePedidoAsync(string serie);
+    Task<bool> UpdateTaxConfigAsync(Dictionary<string, TaxItem> newConfig);
+    Task<(bool Success, string Message)> EliminarPedidoAsync(string serie, double numero);
 }
 
 public class FactusolService : IFactusolService
@@ -48,17 +50,31 @@ public class FactusolService : IFactusolService
             using var connection = new OleDbConnection(GetConnectionString());
             await connection.OpenAsync();
 
-            string query = "SELECT CODCLI, NOFCLI, NOCCLI, NIFCLI, TELCLI, EMACLI, DOMCLI, REQCLI, TARCLI FROM F_CLI";
+            string query = "SELECT CODCLI, NOFCLI, NOCCLI, NIFCLI, TELCLI, EMACLI, DOMCLI, REQCLI, TARCLI, FPACLI, DT1CLI FROM F_CLI";
+            bool esNumero = double.TryParse(busqueda, out double codigoNum);
+
             if (!string.IsNullOrEmpty(busqueda))
             {
-                query += " WHERE NOCCLI LIKE ? OR NOFCLI LIKE ?";
+                if (esNumero)
+                    query += " WHERE CODCLI = ? OR NOCCLI LIKE ? OR NOFCLI LIKE ?";
+                else
+                    query += " WHERE NOCCLI LIKE ? OR NOFCLI LIKE ?";
             }
 
             using var command = new OleDbCommand(query, connection);
             if (!string.IsNullOrEmpty(busqueda))
             {
-                command.Parameters.AddWithValue("?", $"%{busqueda}%");
-                command.Parameters.AddWithValue("?", $"%{busqueda}%");
+                if (esNumero)
+                {
+                    command.Parameters.Add("?", OleDbType.Double).Value = codigoNum;
+                    command.Parameters.Add("?", OleDbType.VarWChar).Value = $"%{busqueda}%";
+                    command.Parameters.Add("?", OleDbType.VarWChar).Value = $"%{busqueda}%";
+                }
+                else
+                {
+                    command.Parameters.Add("?", OleDbType.VarWChar).Value = $"%{busqueda}%";
+                    command.Parameters.Add("?", OleDbType.VarWChar).Value = $"%{busqueda}%";
+                }
             }
 
             using var reader = await command.ExecuteReaderAsync();
@@ -74,7 +90,9 @@ public class FactusolService : IFactusolService
                     EMACLI = reader["EMACLI"].ToString() ?? "",
                     DOMCLI = reader["DOMCLI"].ToString() ?? "",
                     REQCLI = reader["REQCLI"] != DBNull.Value ? Convert.ToDouble(reader["REQCLI"]) : 0,
-                    TARCLI = reader["TARCLI"] != DBNull.Value ? Convert.ToDouble(reader["TARCLI"]) : 1
+                    TARCLI = reader["TARCLI"] != DBNull.Value ? Convert.ToDouble(reader["TARCLI"]) : 1,
+                    FPACLI = reader["FPACLI"]?.ToString()?.Trim() ?? "",
+                    DT1CLI = reader["DT1CLI"] != DBNull.Value ? Convert.ToDecimal(reader["DT1CLI"]) : 0
                 });
             }
         } 
@@ -125,92 +143,113 @@ public class FactusolService : IFactusolService
             using var connection = new OleDbConnection(GetConnectionString());
             await connection.OpenAsync();
             
-            // Simplificamos la consulta para máxima compatibilidad con OLEDB
-            string query = $@"SELECT ART.*, LTA.PRELTA, 
-                (SELECT SUM(ACTSTO) FROM F_STO WHERE ARTSTO = ART.CODART) AS STOCK_ACT
-                FROM F_ART AS ART 
-                LEFT JOIN F_LTA AS LTA ON (LTA.ARTLTA = ART.CODART AND LTA.TARLTA = {tarifa})";
-            
+            // SOLUCIÓN DUPLICADOS: F_STO tiene una fila por almacén, el LEFT JOIN multiplicaba artículos.
+            // Se usan subconsultas para STOCK y PRELTA_TAR para garantizar UNA fila por artículo.
+            // IMPORTANTE: OLEDB/Access NO soporta '?' dentro de subconsultas correlacionadas.
+            // Al intentarlo, Access trata columnas de F_ART como parámetros desconocidos.
+            // Solución: insertar 'tarifa' (int controlado) directamente en el SQL para esa subconsulta.
+            // Los filtros LIKE siguen usando '?' de forma segura en la cláusula WHERE principal.
+            string query = $@"SELECT 
+                F_ART.CODART   AS CODART,
+                F_ART.DESART   AS DESART,
+                F_ART.FAMART   AS FAMART,
+                F_ART.IMGART   AS IMGART,
+                F_ART.PCOART   AS PCOART,
+                F_ART.DT0ART   AS DT0ART,
+                F_ART.TIVART   AS TIVART,
+                (SELECT SUM(ACTSTO) FROM F_STO WHERE F_STO.ARTSTO = F_ART.CODART) AS STOCK_ACT,
+                (SELECT TOP 1 PRELTA FROM F_LTA WHERE F_LTA.ARTLTA = F_ART.CODART AND F_LTA.TARLTA = {tarifa}) AS PRELTA_TAR
+                FROM F_ART";
+
             if (!string.IsNullOrEmpty(busqueda))
             {
-                query += " WHERE (ART.DESART LIKE ? OR ART.CODART LIKE ?)";
+                query += " WHERE (F_ART.DESART LIKE ? OR F_ART.CODART LIKE ?)";
             }
 
             using var command = new OleDbCommand(query, connection);
+            // Los únicos parámetros '?' que quedan son los filtros LIKE de búsqueda
             if (!string.IsNullOrEmpty(busqueda))
             {
-                command.Parameters.Add("?", OleDbType.VarWChar).Value = "%" + busqueda + "%";
-                command.Parameters.Add("?", OleDbType.VarWChar).Value = "%" + busqueda + "%";
+                command.Parameters.Add("?", OleDbType.VarWChar).Value = $"%{busqueda}%";
+                command.Parameters.Add("?", OleDbType.VarWChar).Value = $"%{busqueda}%";
             }
 
-            using var reader = await command.ExecuteReaderAsync();
-            var schema = reader.GetSchemaTable();
-            string imgColumnName = "";
-            
-            foreach (System.Data.DataRow row in schema.Rows) {
-                string colName = row["ColumnName"].ToString() ?? "";
-                if (colName.Contains("IMG", StringComparison.OrdinalIgnoreCase)) {
-                    imgColumnName = colName;
-                    break;
-                }
-            }
-
-            while (await reader.ReadAsync())
+            // Consultar si la tarifa incluye IVA (campo IVATAR en F_TAR)
+            bool conIva = false;
+            try
             {
-                string rImg = !string.IsNullOrEmpty(imgColumnName) ? reader[imgColumnName].ToString()?.Trim() ?? "" : "";
+                using var cmdTar = new OleDbCommand("SELECT IVATAR FROM F_TAR WHERE CODTAR = ?", connection);
+                cmdTar.Parameters.Add("?", OleDbType.Double).Value = (double)tarifa;
+                var ivaTar = await cmdTar.ExecuteScalarAsync();
+                if (ivaTar != null && ivaTar != DBNull.Value)
+                    conIva = (Convert.ToInt32(ivaTar) != 0);
+            }
+            catch { /* Ignorar si no se puede leer la tarifa */ }
 
-                // Lógica de precio: 1. Tarifa, 2. Costo
-                decimal precio = 0;
-                if (reader["PRELTA"] != DBNull.Value && Convert.ToDecimal(reader["PRELTA"]) > 0) 
+            using (var reader = await command.ExecuteReaderAsync())
+            {
+                while (await reader.ReadAsync())
                 {
-                    precio = Convert.ToDecimal(reader["PRELTA"]);
-                }
-                else if (reader["PCMART"] != DBNull.Value && Convert.ToDecimal(reader["PCMART"]) > 0)
-                {
-                    precio = Convert.ToDecimal(reader["PCMART"]);
-                }
-                else if (reader["PCOART"] != DBNull.Value && Convert.ToDecimal(reader["PCOART"]) > 0)
-                {
-                    precio = Convert.ToDecimal(reader["PCOART"]);
-                }
+                    string codart = reader["CODART"].ToString()?.Trim() ?? "?";
+                    string desart = reader["DESART"].ToString()?.Trim() ?? "?";
 
-                articulos.Add(new Articulo
-                {
-                    CODART = reader["CODART"].ToString()?.Trim() ?? "",
-                    DESART = reader["DESART"].ToString()?.Trim() ?? "",
-                    FAMART = reader["FAMART"].ToString()?.Trim() ?? "",
-                    IMGART = rImg,
-                    PrecioVenta = precio,
-                    STOART = reader["STOCK_ACT"] != DBNull.Value ? Convert.ToDouble(reader["STOCK_ACT"]) : 0,
-                    // Conservamos el índice original (1, 2, 3) para mapeo exacto
-                    IvaIndex = reader["IVAART"] != DBNull.Value ? Convert.ToInt32(reader["IVAART"]) : 1
-                });
+                    bool  tarifaEsNull = reader["PRELTA_TAR"] == DBNull.Value;
+                    decimal pTar = tarifaEsNull ? 0 : Convert.ToDecimal(reader["PRELTA_TAR"]);
+                    decimal pco  = reader["PCOART"] != DBNull.Value ? Convert.ToDecimal(reader["PCOART"]) : 0;
+
+                    // LOG: explicar por qué la tarifa no cargó precio
+                    if (tarifaEsNull)
+                        Console.WriteLine($"[TARIFA] Art {codart} '{desart}': PRELTA_TAR es NULL => no existe fila en F_LTA para tarifa {tarifa}. PrecioVenta = 0.");
+                    else if (pTar == 0)
+                        Console.WriteLine($"[TARIFA] Art {codart} '{desart}': PRELTA_TAR = 0 en F_LTA (precio registrado en cero para tarifa {tarifa}). PrecioVenta = 0.");
+                    else
+                        Console.WriteLine($"[TARIFA] Art {codart} '{desart}': Tarifa {tarifa} OK => PRELTA_TAR = {pTar}.");
+
+                    // Si no hay precio de tarifa se muestra 0, NO se usa el precio de costo
+                    decimal precioFinal = pTar;
+
+                    articulos.Add(new Articulo
+                    {
+                        CODART         = codart,
+                        DESART         = desart,
+                        FAMART         = reader["FAMART"].ToString()?.Trim() ?? "",
+                        IMGART         = reader["IMGART"] != DBNull.Value ? reader["IMGART"].ToString()?.Trim() ?? "" : "",
+                        PrecioVenta    = precioFinal,
+                        PRELTA_TAR_RAW = pTar,
+                        PrecioConIva   = conIva,
+                        PCOART         = pco,
+                        DT0ART         = reader["DT0ART"]    != DBNull.Value ? Convert.ToDecimal(reader["DT0ART"])   : 0,
+                        STOART         = reader["STOCK_ACT"] != DBNull.Value ? Convert.ToDouble(reader["STOCK_ACT"]) : 0,
+                        IvaIndex       = reader["TIVART"]    != DBNull.Value ? Convert.ToInt32(reader["TIVART"])     : 0
+                    });
+                }
             }
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Error DB: {ex.Message}");
-            // Fallback: Si falla la consulta compleja, intentamos una básica pero filtrada
+            // Fallback extremadamente básico si la query compleja falla
+            Console.WriteLine($"[TARIFA] FALLBACK activado por error en consulta principal. Los artículos mostrarán PrecioVenta = 0 (sin tarifa).");
             try {
-                articulos.Clear();
                 using var conn2 = new OleDbConnection(GetConnectionString());
                 await conn2.OpenAsync();
-                
-                string qBasic = "SELECT * FROM F_ART";
+                string qBasic = "SELECT CODART, DESART, PCOART FROM F_ART";
                 if (!string.IsNullOrEmpty(busqueda)) qBasic += " WHERE DESART LIKE ? OR CODART LIKE ?";
-                
                 using var cmdBasic = new OleDbCommand(qBasic, conn2);
                 if (!string.IsNullOrEmpty(busqueda)) {
                     cmdBasic.Parameters.Add("?", OleDbType.VarWChar).Value = "%" + busqueda + "%";
                     cmdBasic.Parameters.Add("?", OleDbType.VarWChar).Value = "%" + busqueda + "%";
                 }
-                
                 using var rd2 = await cmdBasic.ExecuteReaderAsync();
                 while (await rd2.ReadAsync()) {
+                    string cod = rd2["CODART"].ToString()?.Trim() ?? "";
+                    decimal pco = rd2["PCOART"] != DBNull.Value ? Convert.ToDecimal(rd2["PCOART"]) : 0;
+                    Console.WriteLine($"[TARIFA] FALLBACK Art {cod}: PrecioVenta = 0 (no se pudo consultar tarifa {tarifa}). Costo en BD = {pco}.");
                     articulos.Add(new Articulo {
-                        CODART = rd2["CODART"].ToString()?.Trim() ?? "",
+                        CODART = cod,
                         DESART = rd2["DESART"].ToString()?.Trim() ?? "",
-                        PrecioVenta = rd2["PCOART"] != DBNull.Value ? Convert.ToDecimal(rd2["PCOART"]) : 0
+                        PrecioVenta = 0,   // Sin tarifa => precio 0, no se expone el costo
+                        PCOART = pco
                     });
                 }
             } catch { /* Ignorar errores en el fallback */ }
@@ -330,7 +369,10 @@ public class FactusolService : IFactusolService
         var lista = new List<Almacen>();
         while (await reader.ReadAsync())
         {
-            lista.Add(new Almacen { Codigo = reader["CODALM"].ToString() ?? "", Nombre = reader["NOMALM"].ToString() ?? "" });
+            lista.Add(new Almacen { 
+                Codigo = reader["CODALM"].ToString()?.Trim() ?? "", 
+                Nombre = reader["NOMALM"].ToString()?.Trim() ?? "" 
+            });
         }
         return lista;
     }
@@ -348,7 +390,44 @@ public class FactusolService : IFactusolService
                 if (pedido.CODPCL == 0 || pedido.CODPCL == null)
                     pedido.CODPCL = await GetSiguientePedidoAsync(pedido.TIPPCL ?? "1");
 
-                // 2. Agrupar Totales por IVA desde Configuración
+                // 2. Obtener datos del cliente para la cabecera
+                string cdo = "", cpo = "", ccp = "", cpr = "", cni = "";
+                string cno = pedido.CNOPCL ?? ""; // Nombre por defecto del modelo
+                if ((pedido.CLIPCL ?? 0) > 0)
+                {
+                    // Se añade NOFCLI para forzar el Nombre Fiscal
+                    string sqlCli = "SELECT DOMCLI, POBCLI, CPOCLI, PROCLI, NIFCLI, NOFCLI FROM F_CLI WHERE CODCLI = ?";
+                    using var cmdCli = new OleDbCommand(sqlCli, connection, transaction);
+                    cmdCli.Parameters.Add("?", OleDbType.Double).Value = pedido.CLIPCL;
+                    using var readerCli = await cmdCli.ExecuteReaderAsync();
+                    if (await readerCli.ReadAsync())
+                    {
+                        cdo = readerCli["DOMCLI"].ToString() ?? "";
+                        cpo = readerCli["POBCLI"].ToString() ?? "";
+                        ccp = readerCli["CPOCLI"].ToString() ?? "";
+                        cpr = readerCli["PROCLI"].ToString() ?? "";
+                        cni = readerCli["NIFCLI"].ToString() ?? "";
+                        
+                        // Si existe nombre fiscal, reemplazar el CNOPCL por él
+                        string nofcli = readerCli["NOFCLI"].ToString() ?? "";
+                        if (!string.IsNullOrWhiteSpace(nofcli)) 
+                        {
+                            cno = nofcli;
+                            pedido.CNOPCL = cno; // Actualizar el pedido para el return log si aplica
+                        }
+                    }
+                }
+
+                // 3. Obtener los porcentajes globales de IVA para guardar en cabecera
+                decimal pctIVA1 = _config.GetValue<decimal>("IvaConfig:0:IVA", 21);
+                decimal pctIVA2 = _config.GetValue<decimal>("IvaConfig:1:IVA", 10);
+                decimal pctIVA3 = _config.GetValue<decimal>("IvaConfig:2:IVA", 4);
+                
+                decimal pctRE1 = _config.GetValue<decimal>("IvaConfig:0:RE", 5.2m);
+                decimal pctRE2 = _config.GetValue<decimal>("IvaConfig:1:RE", 1.4m);
+                decimal pctRE3 = _config.GetValue<decimal>("IvaConfig:2:RE", 0.5m);
+
+                // 4. Agrupar Totales por IVA
                 decimal net1 = 0, net2 = 0, net3 = 0;
                 decimal iva1 = 0, iva2 = 0, iva3 = 0;
                 decimal re1 = 0, re2 = 0, re3 = 0;
@@ -356,65 +435,98 @@ public class FactusolService : IFactusolService
 
                 foreach (var lin in pedido.Lineas)
                 {
-                    // Leer IVA/RE desde IvaConfig:{Index}
-                    var config = _config.GetSection($"IvaConfig:{lin.IvaIndex}");
-                    decimal pctIVA = config.GetValue<decimal>("IVA", lin.IvaIndex == 2 ? 10 : (lin.IvaIndex == 3 ? 4 : 21));
-                    decimal pctRE = config.GetValue<decimal>("RE", lin.IvaIndex == 2 ? 1.4m : (lin.IvaIndex == 3 ? 0.5m : 5.2m));
+                    decimal pctIVA = lin.IvaIndex == 1 ? pctIVA2 : (lin.IvaIndex == 2 ? pctIVA3 : pctIVA1);
+                    decimal pctRE = lin.IvaIndex == 1 ? pctRE2 : (lin.IvaIndex == 2 ? pctRE3 : pctRE1);
                     
-                    lin.IVALPC = (double)pctIVA;
-                    decimal baseLin = (decimal)lin.TOTLPC;
+                    // IMPORTANTE: En F_LPC.IVALPC se guarda el CÓDIGO (0, 1, 2)
+                    lin.IVALPC = (double)lin.IvaIndex;
+
+                    decimal baseLin = (decimal?)(lin.TOTLPC) ?? (lin.Cantidad * lin.Precio);
                     decimal cuotaIVA = Math.Round(baseLin * (pctIVA / 100), 2);
                     decimal cuotaRE = (pedido.REQCLI == 1) ? Math.Round(baseLin * (pctRE / 100), 2) : 0;
 
-                    if (lin.IvaIndex == 1) { net1 += baseLin; iva1 += cuotaIVA; re1 += cuotaRE; }
-                    else if (lin.IvaIndex == 2) { net2 += baseLin; iva2 += cuotaIVA; re2 += cuotaRE; }
-                    else if (lin.IvaIndex == 3) { net3 += baseLin; iva3 += cuotaIVA; re3 += cuotaRE; }
+                    if (lin.IvaIndex == 0) { net1 += baseLin; iva1 += cuotaIVA; re1 += cuotaRE; }
+                    else if (lin.IvaIndex == 1) { net2 += baseLin; iva2 += cuotaIVA; re2 += cuotaRE; }
+                    else if (lin.IvaIndex == 2) { net3 += baseLin; iva3 += cuotaIVA; re3 += cuotaRE; }
 
                     totalDoc += baseLin + cuotaIVA + cuotaRE;
                 }
 
-                // 3. Insertar Cabecera (F_PCL) - Eliminado TOTALPCL (campo inexistente)
-                string sqlCab = @"INSERT INTO F_PCL (TIPPCL, CODPCL, FECPCL, CLIPCL, ALMPCL, TOTPCL, 
-                                 NET1PCL, NET2PCL, NET3PCL, IIVA1PCL, IIVA2PCL, IIVA3PCL, 
-                                 IREC1PCL, IREC2PCL, IREC3PCL, REQPCL) 
-                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                // 5. Insertar Cabecera (F_PCL)
+                string sqlCab = @"INSERT INTO F_PCL (TIPPCL, CODPCL, FECPCL, CLIPCL, CNOPCL, ALMPCL, TOTPCL, 
+                                 NET1PCL, NET2PCL, NET3PCL, BAS1PCL, BAS2PCL, BAS3PCL,
+                                 PIVA1PCL, PIVA2PCL, PIVA3PCL, IIVA1PCL, IIVA2PCL, IIVA3PCL, 
+                                 PREC1PCL, PREC2PCL, PREC3PCL, IREC1PCL, IREC2PCL, IREC3PCL, 
+                                  REQPCL, ESTPCL, CDOPCL, CPOPCL, CCPPCL, CPRPCL, CNIPCL, FOPPCL) 
+                                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
                 using var cmdCab = new OleDbCommand(sqlCab, connection, transaction);
                 cmdCab.Parameters.Add("?", OleDbType.VarWChar).Value = pedido.TIPPCL ?? "1";
                 cmdCab.Parameters.Add("?", OleDbType.Double).Value = pedido.CODPCL;
-                cmdCab.Parameters.Add("?", OleDbType.Date).Value = pedido.FECPCL ?? DateTime.Now;
+                cmdCab.Parameters.Add("?", OleDbType.DBDate).Value = (pedido.FECPCL ?? DateTime.Now).Date;
                 cmdCab.Parameters.Add("?", OleDbType.Double).Value = pedido.CLIPCL ?? 0;
+                cmdCab.Parameters.Add("?", OleDbType.VarWChar).Value = cno; // Nombre Fiscal
                 cmdCab.Parameters.Add("?", OleDbType.VarWChar).Value = !string.IsNullOrEmpty(pedido.ALMPCL) ? pedido.ALMPCL : "GENERAL";
                 cmdCab.Parameters.Add("?", OleDbType.Currency).Value = totalDoc;
-                cmdCab.Parameters.Add("?", OleDbType.Currency).Value = net1;
+                
+                cmdCab.Parameters.Add("?", OleDbType.Currency).Value = net1; // NET
                 cmdCab.Parameters.Add("?", OleDbType.Currency).Value = net2;
                 cmdCab.Parameters.Add("?", OleDbType.Currency).Value = net3;
-                cmdCab.Parameters.Add("?", OleDbType.Currency).Value = iva1;
+                
+                cmdCab.Parameters.Add("?", OleDbType.Currency).Value = net1; // BAS = NET
+                cmdCab.Parameters.Add("?", OleDbType.Currency).Value = net2;
+                cmdCab.Parameters.Add("?", OleDbType.Currency).Value = net3;
+                
+                cmdCab.Parameters.Add("?", OleDbType.Double).Value = (double)pctIVA1; // PIVA
+                cmdCab.Parameters.Add("?", OleDbType.Double).Value = (double)pctIVA2;
+                cmdCab.Parameters.Add("?", OleDbType.Double).Value = (double)pctIVA3;
+
+                cmdCab.Parameters.Add("?", OleDbType.Currency).Value = iva1; // IIVA
                 cmdCab.Parameters.Add("?", OleDbType.Currency).Value = iva2;
                 cmdCab.Parameters.Add("?", OleDbType.Currency).Value = iva3;
-                cmdCab.Parameters.Add("?", OleDbType.Currency).Value = re1;
+                
+                cmdCab.Parameters.Add("?", OleDbType.Double).Value = (double)pctRE1; // PREC
+                cmdCab.Parameters.Add("?", OleDbType.Double).Value = (double)pctRE2;
+                cmdCab.Parameters.Add("?", OleDbType.Double).Value = (double)pctRE3;
+
+                cmdCab.Parameters.Add("?", OleDbType.Currency).Value = re1; // IREC
                 cmdCab.Parameters.Add("?", OleDbType.Currency).Value = re2;
                 cmdCab.Parameters.Add("?", OleDbType.Currency).Value = re3;
+                
                 cmdCab.Parameters.Add("?", OleDbType.Double).Value = (double)pedido.REQCLI;
+                cmdCab.Parameters.Add("?", OleDbType.Double).Value = 0; // 0 = Pendiente
+                
+                cmdCab.Parameters.Add("?", OleDbType.VarWChar).Value = cdo;
+                cmdCab.Parameters.Add("?", OleDbType.VarWChar).Value = cpo;
+                cmdCab.Parameters.Add("?", OleDbType.VarWChar).Value = ccp;
+                cmdCab.Parameters.Add("?", OleDbType.VarWChar).Value = cpr;
+                cmdCab.Parameters.Add("?", OleDbType.VarWChar).Value = cni;
+                cmdCab.Parameters.Add("?", OleDbType.VarWChar).Value = pedido.FOPPCL ?? ""; // Forma de Pago (FOPPCL)
 
                 await cmdCab.ExecuteNonQueryAsync();
 
-                // 4. Insertar Líneas (F_LCL)
+                // 5. Insertar Líneas (F_LPC) - Agregado PENLPC, COSLPC y DT1LPC
                 int pos = 1;
                 foreach (var lin in pedido.Lineas)
                 {
-                    string sqlLin = @"INSERT INTO F_LCL (TIPLCL, CODLCL, POSLCL, ARTLCL, DESLCL, CANLCL, PRELCL, TOTLCL, IVALPC) 
-                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    string sqlLin = @"INSERT INTO F_LPC (TIPLPC, CODLPC, POSLPC, ARTLPC, DESLPC, CANLPC, PRELPC, TOTLPC, IVALPC, PENLPC, COSLPC, DT1LPC) 
+                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
                     using var cmdLin = new OleDbCommand(sqlLin, connection, transaction);
                     cmdLin.Parameters.Add("?", OleDbType.VarWChar).Value = pedido.TIPPCL ?? "1";
                     cmdLin.Parameters.Add("?", OleDbType.Double).Value = pedido.CODPCL;
                     cmdLin.Parameters.Add("?", OleDbType.Integer).Value = pos++;
                     cmdLin.Parameters.Add("?", OleDbType.VarWChar).Value = lin.ARTLPC ?? "";
                     cmdLin.Parameters.Add("?", OleDbType.VarWChar).Value = lin.DESLPC ?? "";
-                    cmdLin.Parameters.Add("?", OleDbType.Double).Value = (double)(lin.CANLPC ?? 0);
+                    
+                    double canLpc = (double)(lin.CANLPC ?? 0);
+                    
+                    cmdLin.Parameters.Add("?", OleDbType.Double).Value = canLpc;
                     cmdLin.Parameters.Add("?", OleDbType.Double).Value = (double)(lin.PRELPC ?? 0);
-                    cmdLin.Parameters.Add("?", OleDbType.Currency).Value = lin.TOTLPC ?? 0;
+                    cmdLin.Parameters.Add("?", OleDbType.Currency).Value = lin.TOTLPC ?? (lin.Cantidad * lin.Precio);
                     cmdLin.Parameters.Add("?", OleDbType.Double).Value = lin.IVALPC ?? 0;
+                    cmdLin.Parameters.Add("?", OleDbType.Double).Value = canLpc; // PENLPC igual que CANLPC
+                    cmdLin.Parameters.Add("?", OleDbType.Currency).Value = lin.COSLPC ?? 0;
+                    cmdLin.Parameters.Add("?", OleDbType.Double).Value = (double)(lin.DT1LPC ?? 0);
 
                     await cmdLin.ExecuteNonQueryAsync();
                 }
@@ -435,6 +547,46 @@ public class FactusolService : IFactusolService
         }
     }
 
+
+
+    public async Task<(bool Success, string Message)> EliminarPedidoAsync(string serie, double numero)
+    {
+        try
+        {
+            using var connection = new OleDbConnection(GetConnectionString());
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction();
+            try
+            {
+                // 1. Eliminar líneas
+                string sqlLines = "DELETE FROM F_LPC WHERE TIPLPC = ? AND CODLPC = ?";
+                using var cmdLines = new OleDbCommand(sqlLines, connection, transaction);
+                cmdLines.Parameters.Add("?", OleDbType.VarWChar).Value = serie;
+                cmdLines.Parameters.Add("?", OleDbType.Double).Value = numero;
+                await cmdLines.ExecuteNonQueryAsync();
+
+                // 2. Eliminar cabecera
+                string sqlHeader = "DELETE FROM F_PCL WHERE TIPPCL = ? AND CODPCL = ?";
+                using var cmdHeader = new OleDbCommand(sqlHeader, connection, transaction);
+                cmdHeader.Parameters.Add("?", OleDbType.VarWChar).Value = serie;
+                cmdHeader.Parameters.Add("?", OleDbType.Double).Value = numero;
+                await cmdHeader.ExecuteNonQueryAsync();
+
+                await transaction.CommitAsync();
+                return (true, $"Pedido {serie}-{numero} eliminado correctamente.");
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error eliminando pedido: {ex.Message}");
+            return (false, ex.Message);
+        }
+    }
 
     public async Task<(bool Success, string Message)> TestConnectionAsync()
     {
@@ -540,6 +692,40 @@ public class FactusolService : IFactusolService
         var configuredMaster = (_config["FactusolConfig:MasterPassword"] ?? "admin").Trim();
         var inputPassword = (password ?? "").Trim();
         return inputPassword == configuredMaster;
+    }
+
+    public async Task<bool> UpdateTaxConfigAsync(Dictionary<string, TaxItem> newConfig)
+    {
+        string[] filesToUpdate = { "appsettings.json", "appsettings.Development.json" };
+        bool totalSuccess = false;
+
+        foreach (var fileName in filesToUpdate)
+        {
+            string configPath = Path.Combine(_env.ContentRootPath, fileName);
+            if (!File.Exists(configPath)) continue;
+
+            try
+            {
+                var jsonText = await File.ReadAllTextAsync(configPath);
+                var json = System.Text.Json.Nodes.JsonNode.Parse(jsonText);
+                
+                if (json != null)
+                {
+                    // Create or updated IvaConfig section
+                    var ivaConfigNode = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(newConfig));
+                    json["IvaConfig"] = ivaConfigNode;
+                    
+                    await File.WriteAllTextAsync(configPath, json.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+                    totalSuccess = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error actualizando impuestos en {fileName}: {ex.Message}");
+            }
+        }
+
+        return totalSuccess;
     }
 
     private List<Cliente> GetMockClientes(string busqueda)

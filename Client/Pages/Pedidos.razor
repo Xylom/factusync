@@ -1,5 +1,8 @@
 @page "/pedidos"
 @inject HttpClient Http
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject IJSRuntime JS
 
 <MudText Typo="Typo.h5" Class="mb-4 font-weight-bold" Color="Color.Primary">Historial de Mis Pedidos</MudText>
 
@@ -9,17 +12,25 @@
 
 <MudTable Items="pedidos" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="2" Class="rounded-lg" OnRowClick="@VerDetalle" T="Pedido" RowStyle="cursor: pointer;" Loading="cargando">
     <HeaderContent>
+        <MudTh>Pedido #</MudTh>
         <MudTh>Fecha</MudTh>
         <MudTh>Cliente</MudTh>
         <MudTh>Total</MudTh>
         <MudTh>Estado</MudTh>
+        <MudTh Style="text-align: right;">Acciones</MudTh>
     </HeaderContent>
     <RowTemplate>
+        <MudTd DataLabel="Pedido #">@($"{context.TIPPCL}-{context.CODPCL}")</MudTd>
         <MudTd DataLabel="Fecha">@context.Fecha.ToShortDateString()</MudTd>
         <MudTd DataLabel="Cliente">@context.CNOPCL</MudTd>
         <MudTd DataLabel="Total"><MudText Color="Color.Primary" Class="font-weight-bold">@context.Total.ToString("N2")</MudText></MudTd>
         <MudTd DataLabel="Estado">
             <MudChip T="string" Color="Color.Info" Size="Size.Small">Pendiente</MudChip>
+        </MudTd>
+        <MudTd DataLabel="Acciones" Style="text-align: right;">
+            <div @onclick:stopPropagation="true">
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => ConfirmarEliminar(context))" />
+            </div>
         </MudTd>
     </RowTemplate>
 </MudTable>
@@ -36,7 +47,7 @@
             <MudText Class="mb-2"><b>Cliente:</b> @_selectedPedido.CNOPCL</MudText>
             <MudText Class="mb-4"><b>Fecha:</b> @_selectedPedido.Fecha.ToShortDateString()</MudText>
             
-            <MudTable Items="_selectedLineas" Dense="true" Hover="true" Breakpoint="Breakpoint.None" Elevation="0">
+            <MudTable Items="_selectedLineas" Dense="true" Hover="true" Breakpoint="Breakpoint.None" Elevation="0" T="PedidoLinea">
                 <HeaderContent>
                     <MudTh>Artículo</MudTh>
                     <MudTh>Cant</MudTh>
@@ -55,9 +66,26 @@
     </DialogActions>
 </MudDialog>
 
+<MudMessageBox @ref="mbox" Title="Confirmar Eliminación">
+    <MessageContent>
+        @if (pedidoAEliminar != null)
+        {
+            <MudText>¿Estás seguro de que deseas eliminar el pedido #@pedidoAEliminar.TIPPCL-@pedidoAEliminar.CODPCL de <b>@pedidoAEliminar.CNOPCL</b>?</MudText>
+        }
+    </MessageContent>
+    <YesButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.Delete">Eliminar</MudButton>
+    </YesButton>
+    <CancelButton>
+        <MudButton Variant="Variant.Text">Cancelar</MudButton>
+    </CancelButton>
+</MudMessageBox>
+
 @code {
     private bool _visible;
     private Pedido? _selectedPedido;
+    private Pedido? pedidoAEliminar;
+    private MudMessageBox? mbox;
     private List<PedidoLinea> _selectedLineas = new();
     private DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
     private List<Pedido> pedidos = new();
@@ -96,6 +124,40 @@
         catch (Exception ex)
         {
             Console.WriteLine($"Error: {ex.Message}");
+        }
+    }
+
+    private async Task ConfirmarEliminar(Pedido pedido)
+    {
+        pedidoAEliminar = pedido;
+        StateHasChanged();
+        
+        bool? result = await mbox?.ShowAsync();
+        if (result == true)
+        {
+            await EliminarPedido(pedido);
+        }
+    }
+
+    private async Task EliminarPedido(Pedido pedido)
+    {
+        try
+        {
+            var response = await Http.DeleteAsync($"api/pedidos?serie={pedido.TIPPCL}&numero={pedido.CODPCL}");
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add("Pedido eliminado correctamente", Severity.Success);
+                await LoadPedidos();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Snackbar.Add($"Error al eliminar: {error}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error de conexión: {ex.Message}", Severity.Error);
         }
     }
 }
