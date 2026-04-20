@@ -78,6 +78,45 @@ api.MapPost("/settings/dbpath", async (IFactusolService service, FactuSync.Share
     return Results.BadRequest(new { message = "Contraseña maestra incorrecta o ruta inválida" });
 });
 
+api.MapGet("/settings/browse", (string? path) => 
+{
+    try 
+    {
+        string targetPath = string.IsNullOrEmpty(path) ? "C:\\" : path;
+        
+        // Si el path termina en archivo .accdb, queremos el directorio padre para navegar
+        if (File.Exists(targetPath) && targetPath.EndsWith(".accdb", StringComparison.OrdinalIgnoreCase))
+        {
+            targetPath = Path.GetDirectoryName(targetPath) ?? "C:\\";
+        }
+
+        if (!Directory.Exists(targetPath)) 
+        {
+            // Intentar con el disco C si la ruta no existe
+            targetPath = "C:\\";
+        }
+
+        var entries = Directory.GetFileSystemEntries(targetPath)
+            .Select(e => new {
+                Name = Path.GetFileName(e),
+                FullPath = e,
+                IsDirectory = Directory.Exists(e),
+                IsDatabase = e.EndsWith(".accdb", StringComparison.OrdinalIgnoreCase)
+            })
+            .Where(e => e.IsDirectory || e.IsDatabase) // Solo carpetas o bases de datos
+            .OrderByDescending(e => e.IsDirectory)
+            .ThenBy(e => e.Name)
+            .ToList();
+
+        return Results.Ok(new { 
+            CurrentPath = targetPath, 
+            ParentPath = Path.GetDirectoryName(targetPath),
+            Entries = entries 
+        });
+    }
+    catch (Exception ex) { return Results.Problem(ex.Message); }
+});
+
 api.MapGet("/pedidos/lineas", async (IFactusolService service, string tip, double cod) => 
     await service.GetPedidoLineasAsync(tip, cod));
 

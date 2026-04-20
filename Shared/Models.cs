@@ -678,4 +678,19 @@ namespace FactuSync.Shared
     }
 
     public class TaxItem { public decimal IVA { get; set; } public decimal RE { get; set; } }
+
+    public class BrowseResponse
+    {
+        public string CurrentPath { get; set; } = string.Empty;
+        public string? ParentPath { get; set; }
+        public List<FileEntry> Entries { get; set; } = new();
+    }
+
+    public class FileEntry
+    {
+        public string Name { get; set; } = string.Empty;
+        public string FullPath { get; set; } = string.Empty;
+        public bool IsDirectory { get; set; }
+        public bool IsDatabase { get; set; }
+    }
 }

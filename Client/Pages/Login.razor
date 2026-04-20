@@ -101,16 +101,39 @@
                 <MudText Typo="Typo.body2" Class="mb-8" Style="color: #6c757d;">Configure la ruta de su base de datos Factusol.</MudText>
 
                 <EditForm Model="dbModel" OnValidSubmit="SaveDbSettings">
-                    <div class="d-flex align-center gap-2 mb-6">
-                        <MudTextField @bind-Value="dbModel.NewPath" Label="Ruta BD (.accdb)" Variant="Variant.Outlined" 
-                                      Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Search" />
-                        
-                        <InputFile id="factusol-file-picker" OnChange="OnInputFileChange" hidden accept=".accdb" />
-                        <MudIconButton HtmlTag="label"
-                                       Color="Color.Info"
-                                       Icon="@Icons.Material.Filled.FileOpen"
-                                       for="factusol-file-picker">
-                        </MudIconButton>
+                    <div class="d-flex flex-column gap-2 mb-6">
+                        <div class="d-flex align-center gap-2">
+                            <MudTextField @bind-Value="dbModel.NewPath" Label="Ruta BD (.accdb)" Variant="Variant.Outlined" 
+                                          Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.FolderOpen"
+                                          OnAdornmentClick="OpenBrowser" />
+                        </div>
+
+                        @if (showBrowser)
+                        {
+                            <MudPaper Outlined="true" Class="pa-2 mt-2" Style="max-height: 300px; overflow-y: auto; background-color: #f1f3f5;">
+                                <div class="d-flex align-center mb-2 px-2 sticky-top" style="background-color: #f1f3f5; z-index: 10;">
+                                    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Size="Size.Small" OnClick="GoToParent" Disabled="@(string.IsNullOrEmpty(browseData?.ParentPath))" />
+                                    <MudText Typo="Typo.caption" Class="ml-2 flex-grow-1" Style="word-break: break-all;">@browseData?.CurrentPath</MudText>
+                                    <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="() => showBrowser = false" />
+                                </div>
+                                <MudList T="string" Clickable="true" Dense="true">
+                                    @if (browseData?.Entries != null)
+                                    {
+                                        @foreach (var entry in browseData.Entries)
+                                        {
+                                            <MudListItem T="string" OnClick="() => OnEntryClick(entry)">
+                                                <div class="d-flex align-center">
+                                                    <MudIcon Icon="@(entry.IsDirectory ? Icons.Material.Filled.Folder : Icons.Material.Filled.Description)" 
+                                                             Color="@(entry.IsDirectory ? Color.Info : Color.Default)"
+                                                             Size="Size.Small" Class="mr-2" />
+                                                    <MudText Typo="Typo.body2">@entry.Name</MudText>
+                                                </div>
+                                            </MudListItem>
+                                        }
+                                    }
+                                </MudList>
+                            </MudPaper>
+                        }
                     </div>
                     
                     <div class="d-flex flex-column gap-2 text-center">
@@ -165,6 +188,8 @@
     private InputType masterInputType = InputType.Password;
     private bool isLoading = false;
     private bool isTesting = false;
+    private bool showBrowser = false;
+    private BrowseResponse? browseData;
 
     private void ToggleShowClave()
     {
@@ -243,13 +268,35 @@
         finally { isTesting = false; }
     }
 
-    private void OnInputFileChange(InputFileChangeEventArgs e)
+    private async Task OpenBrowser()
     {
-        var file = e.File;
-        if (file != null)
+        showBrowser = !showBrowser;
+        if (showBrowser) await LoadPath(dbModel.NewPath);
+    }
+
+    private async Task LoadPath(string? path)
+    {
+        try {
+            var response = await Http.GetFromJsonAsync<BrowseResponse>($"/api/settings/browse?path={Uri.EscapeDataString(path ?? "")}");
+            if (response != null) browseData = response;
+        } catch { Snackbar.Add("No se pudo acceder a la ruta", Severity.Error); }
+    }
+
+    private async Task GoToParent()
+    {
+        if (!string.IsNullOrEmpty(browseData?.ParentPath)) await LoadPath(browseData.ParentPath);
+    }
+
+    private async Task OnEntryClick(FileEntry entry)
+    {
+        if (entry.IsDirectory)
         {
-            dbModel.NewPath = file.Name;
-            Snackbar.Add("Seleccionado: " + file.Name + ". Nota: Complete la ruta de la carpeta (ej: C:\\Factusol\\Datos\\...)", Severity.Info, config => { config.VisibleStateDuration = 10000; });
+            await LoadPath(entry.FullPath);
+        }
+        else if (entry.IsDatabase)
+        {
+            dbModel.NewPath = entry.FullPath;
+            showBrowser = false;
         }
     }
 }

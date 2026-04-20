@@ -70,7 +70,7 @@
                 <MudNumericField @bind-Value="descuentoSeleccionado" Label="Dto%" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0" Max="100" Disabled="!agentCanDiscount" />
             </MudItem>
             <MudItem xs="4" sm="2">
-                <MudButton EndIcon="@Icons.Material.Filled.Add" Color="Color.Primary" Variant="Variant.Filled" FullWidth="true" OnClick="AgregarLinea" Style="height: 40px;">Add</MudButton>
+                <MudButton EndIcon="@Icons.Material.Filled.Add" Color="Color.Primary" Variant="Variant.Filled" FullWidth="true" OnClick="AgregarLinea" Style="height: 40px;">Agregar</MudButton>
             </MudItem>
         </MudGrid>
     </div>
@@ -91,7 +91,7 @@
 
     <!-- Cajón del Carrito (Cart Mode) -->
     <MudDrawer @bind-Open="@cartOpen" Anchor="Anchor.Bottom" Height="85vh" Elevation="25" Variant="@DrawerVariant.Temporary" 
-               Class="rounded-t-xl overflow-hidden" Style="z-index: 3000;">
+               Class="rounded-t-xl overflow-hidden">
         
         <div class="pa-4 d-flex align-center border-b" style="background-color: white;">
             <MudText Typo="Typo.h6" Color="Color.Primary"><b>Resumen del Pedido</b></MudText>
@@ -118,6 +118,7 @@
                         </div>
                         <div class="d-flex align-center">
                             <MudText Typo="Typo.body2" Class="mr-2"><b>@((lin.TOTLPC ?? 0).ToString("N2") )</b></MudText>
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Info" Size="Size.Small" OnClick="@(() => AbrirEdicionLinea(lin))" />
                             <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => EliminarLinea(lin))" />
                         </div>
                     </div>
@@ -143,6 +144,27 @@
         </div>
     </MudDrawer>
 }
+
+<MudDialog @bind-Visible="dialogEdicionOpen" Options="new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true }" Style="z-index: 2000;">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Editar Artículo</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (lineaEditada != null)
+        {
+            <MudTextField @bind-Value="lineaEditada.DESLPC" Label="Descripción" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-4" />
+            <div class="d-flex gap-2">
+                <MudNumericField @bind-Value="lineaEditada.CANLPC" Label="Cant." Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-4" Min="0.001M" />
+                <MudNumericField @bind-Value="lineaEditada.PRELPC" Label="Precio U." Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-4" />
+                <MudNumericField @bind-Value="lineaEditada.DT1LPC" Label="Dto%" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-4" Max="100" Min="0" Disabled="!agentCanDiscount" />
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => dialogEdicionOpen = false">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="ConfirmarEdicion">Actualizar</MudButton>
+    </DialogActions>
+</MudDialog>
 }
 
 
@@ -170,6 +192,9 @@
     private bool agentCanDiscount = true;
     private bool guardando = false;
     private bool cartOpen = false;
+    private bool dialogEdicionOpen = false;
+    private PedidoLinea? lineaEditada;
+    private PedidoLinea? _lineaOriginalRef;
     private List<string> seriesDisponibles = new();
     private List<Almacen> almacenesDisponibles = new();
     private Dictionary<string, TaxItem>? taxConfig;
@@ -390,6 +415,48 @@
     {
         pedido.Lineas.Remove(linea);
         ActualizarTotal();
+    }
+
+    private void AbrirEdicionLinea(PedidoLinea linea)
+    {
+        // Hacer una copia para no afectar el pedido hasta confirmar
+        lineaEditada = new PedidoLinea
+        {
+            ARTLPC = linea.ARTLPC,
+            DESLPC = linea.DESLPC,
+            CANLPC = linea.CANLPC,
+            PRELPC = linea.PRELPC,
+            DT1LPC = linea.DT1LPC,
+            IVALPC = linea.IVALPC,
+            IvaIndex = linea.IvaIndex,
+            COSLPC = linea.COSLPC,
+            TOTLPC = linea.TOTLPC
+        };
+        _lineaOriginalRef = linea;
+        dialogEdicionOpen = true;
+    }
+
+    private void ConfirmarEdicion()
+    {
+        if (lineaEditada != null && _lineaOriginalRef != null)
+        {
+            // Recalcular TOTLPC de la linea editada
+            decimal baseUnit = lineaEditada.PRELPC ?? 0;
+            decimal cant = lineaEditada.CANLPC ?? 0;
+            double dto = (double)(lineaEditada.DT1LPC ?? 0);
+            
+            lineaEditada.TOTLPC = baseUnit * cant * (decimal)(1 - (dto / 100));
+
+            // Reemplazar en la lista
+            int index = pedido.Lineas.IndexOf(_lineaOriginalRef);
+            if (index != -1)
+            {
+                pedido.Lineas[index] = lineaEditada;
+            }
+            
+            ActualizarTotal();
+            dialogEdicionOpen = false;
+        }
     }
 
     private void ActualizarTotal()
