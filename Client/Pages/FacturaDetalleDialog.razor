@@ -1,0 +1,127 @@
+@using FactuSync.Shared
+@inject HttpClient Http
+
+<MudDialog>
+    <DialogContent>
+        <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-6">
+            <MudTabPanel Text="Detalles de Factura" Icon="@Icons.Material.Filled.Receipt">
+                <div class="d-flex justify-space-between mb-4">
+                    <div>
+                        <MudText Typo="Typo.h6">@Factura.CNOFAC</MudText>
+                        <MudText Typo="Typo.body2">NIT: @Factura.CNIFAC</MudText>
+                        <MudText Typo="Typo.body2">Tel: @Factura.TELFAC</MudText>
+                        <MudText Typo="Typo.body2">Dir: @Factura.CDOFAC</MudText>
+                    </div>
+                    <div class="text-right">
+                        <MudText Typo="Typo.h6" Color="Color.Primary">FAC-@Factura.TIPFAC-@Factura.CODFAC.ToString().PadLeft(3, '0')</MudText>
+                        <MudText Typo="Typo.body2">Fecha: @Factura.FECFAC.ToShortDateString()</MudText>
+                    </div>
+                </div>
+
+                @if (cargandoLineas)
+                {
+                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+                }
+                else
+                {
+                    <MudTable Items="Lineas" Dense="true" Hover="true" Elevation="0" Class="border rounded-lg">
+                        <HeaderContent>
+                            <MudTh>Código</MudTh>
+                            <MudTh>Descripción</MudTh>
+                            <MudTh>Cant.</MudTh>
+                            <MudTh>Precio</MudTh>
+                            <MudTh>Dto. %</MudTh>
+                            <MudTh>IVA %</MudTh>
+                            <MudTh>Total</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.CodigoArticulo</MudTd>
+                            <MudTd>@context.DescripcionArticulo</MudTd>
+                            <MudTd>@context.Cantidad.ToString("N2")</MudTd>
+                            <MudTd>€ @context.Precio.ToString("N2")</MudTd>
+                            <MudTd>@context.Descuento1.ToString("N2")%</MudTd>
+                            <MudTd>@context.Iva.ToString("N0")%</MudTd>
+                            <MudTd>€ @context.Total.ToString("N2")</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                    <div class="d-flex justify-end mt-4">
+                        <MudText Typo="Typo.h6" Class="font-weight-bold">Total Factura: € @Factura.TOTFAC.ToString("N2")</MudText>
+                    </div>
+                }
+            </MudTabPanel>
+            <MudTabPanel Text="Cobros Asociados" Icon="@Icons.Material.Filled.Payments">
+                @if (cargandoCobros)
+                {
+                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+                }
+                else if (!Cobros.Any())
+                {
+                    <MudAlert Severity="Severity.Info" Class="mt-4">No se encontraron cobros asociados a esta factura.</MudAlert>
+                }
+                else
+                {
+                    <MudTable Items="Cobros" Dense="true" Hover="true" Elevation="0" Class="border rounded-lg">
+                        <HeaderContent>
+                            <MudTh>ID Cobro</MudTh>
+                            <MudTh>Fecha</MudTh>
+                            <MudTh>Concepto</MudTh>
+                            <MudTh>Importe</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.CODCOB</MudTd>
+                            <MudTd>@(context.FECCOB?.ToShortDateString() ?? "-")</MudTd>
+                            <MudTd>@context.CPTCOB</MudTd>
+                            <MudTd Class="font-weight-bold text-success">€ @context.IMPCOB?.ToString("N2")</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                    <div class="d-flex justify-end mt-4">
+                        <MudText Typo="Typo.h6" Class="font-weight-bold text-success">Total Cobrado: € @Cobros.Sum(c => c.IMPCOB ?? 0).ToString("N2")</MudText>
+                    </div>
+                }
+            </MudTabPanel>
+        </MudTabs>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Color="Color.Primary" OnClick="Cerrar">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public Factura Factura { get; set; } = new();
+    
+    private List<FacturaLinea> Lineas = new();
+    private List<Cobro> Cobros = new();
+    private bool cargandoLineas = true;
+    private bool cargandoCobros = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Task.WhenAll(CargarLineas(), CargarCobros());
+    }
+
+    private async Task CargarLineas()
+    {
+        try
+        {
+            Lineas = await Http.GetFromJsonAsync<List<FacturaLinea>>($"/api/facturas/{Factura.TIPFAC}/{Factura.CODFAC}/lineas") ?? new();
+        }
+        catch { }
+        finally { cargandoLineas = false; }
+    }
+
+    private async Task CargarCobros()
+    {
+        try
+        {
+            Cobros = await Http.GetFromJsonAsync<List<Cobro>>($"/api/facturas/{Factura.TIPFAC}/{Factura.CODFAC}/cobros") ?? new();
+        }
+        catch { }
+        finally { cargandoCobros = false; }
+    }
+
+    private void Cerrar()
+    {
+        MudDialog.Close(DialogResult.Ok(true));
+    }
+}

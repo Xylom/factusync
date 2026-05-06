@@ -1,0 +1,195 @@
+@page "/terminal"
+@using FactuSync.Shared
+@using System.Net
+@inject HttpClient Http
+@inject IJSRuntime JS
+@implements IDisposable
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="pa-3">
+    
+    <!-- Header Estilo Terminal -->
+    <MudPaper Elevation="0" Class="pa-4 mb-3" Style="background: linear-gradient(135deg, #1e1e2e 0%, #313244 100%); border-radius: 12px; border: 1px solid #45475a;">
+        <div class="d-flex align-center justify-space-between">
+            <div class="d-flex align-center gap-3">
+                <div class="pa-2 rounded-lg" style="background: rgba(137, 180, 250, 0.1);">
+                    <MudIcon Icon="@Icons.Material.Filled.Terminal" Size="Size.Large" Style="color: #89b4fa;" />
+                </div>
+                <div>
+                    <MudText Typo="Typo.h5" Style="color: white; font-weight: 700; margin: 0; letter-spacing: -0.5px;">
+                        Terminal de Túnel
+                    </MudText>
+                    <MudText Typo="Typo.body2" Style="color: #a6adc8; margin: 0;">
+                        Monitoreo en tiempo real de la conectividad remota
+                    </MudText>
+                </div>
+            </div>
+            <div class="d-flex align-center gap-4">
+                <div class="text-right d-none d-sm-block">
+                    <MudText Typo="Typo.caption" Style="color: #6c7086; display: block;">PROVEEDOR ACTUAL</MudText>
+                    <MudText Typo="Typo.body2" Style="color: #cba6f7; font-weight: 600;">@provider.ToUpper()</MudText>
+                </div>
+                <MudChip T="string" Size="Size.Medium" Color="@(string.IsNullOrEmpty(publicUrl) ? Color.Warning : Color.Success)" 
+                         Variant="Variant.Filled"
+                         Icon="@(string.IsNullOrEmpty(publicUrl) ? Icons.Material.Filled.Sync : Icons.Material.Filled.CheckCircle)">
+                    @(string.IsNullOrEmpty(publicUrl) ? "Negociando..." : "Activo")
+                </MudChip>
+            </div>
+        </div>
+    </MudPaper>
+
+    <!-- Banner de URL Activa -->
+    @if (!string.IsNullOrEmpty(publicUrl))
+    {
+        <MudPaper Elevation="0" Class="pa-4 mb-3 d-flex align-center justify-space-between" 
+                  Style="border-radius: 12px; background: #181825; border: 1px solid #a6e3a1; border-left: 6px solid #a6e3a1;">
+            <div class="d-flex align-center gap-3">
+                <MudIcon Icon="@Icons.Material.Filled.Link" Style="color: #a6e3a1;" />
+                <div>
+                    <MudText Typo="Typo.caption" Style="color: #6c7086; text-transform: uppercase; font-weight: 700;">Enlace Público Compartido</MudText>
+                    <MudText Typo="Typo.h6" Style="color: #a6e3a1; font-weight: 700; font-family: 'JetBrains Mono', monospace;">@publicUrl</MudText>
+                </div>
+            </div>
+            <div class="d-flex gap-2">
+                <MudButton Variant="Variant.Outlined" Color="Color.Success" Size="Size.Small" 
+                           StartIcon="@Icons.Material.Filled.ContentCopy" OnClick="CopyUrl" Class="rounded-lg">
+                    Copiar
+                </MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" 
+                           StartIcon="@Icons.Material.Filled.OpenInNew" Href="@publicUrl" Target="_blank" Class="rounded-lg">
+                    Abrir
+                </MudButton>
+            </div>
+        </MudPaper>
+    }
+
+    <!-- Consola Terminal -->
+    <MudPaper Elevation="4" Class="pa-0" Style="border-radius: 12px; overflow: hidden; height: calc(100vh - 300px); min-height: 450px; background: #11111b; border: 1px solid #45475a;">
+        <!-- Título de Ventana -->
+        <div class="d-flex align-center justify-space-between pa-2 px-4" Style="background: #181825; border-bottom: 1px solid #313244;">
+            <div class="d-flex align-center gap-2">
+                <div style="width: 12px; height: 12px; border-radius: 50%; background: #f38ba8;"></div>
+                <div style="width: 12px; height: 12px; border-radius: 50%; background: #f9e2af;"></div>
+                <div style="width: 12px; height: 12px; border-radius: 50%; background: #a6e3a1;"></div>
+                <MudText Typo="Typo.caption" Style="color: #9399b2; margin-left: 12px; font-weight: 500;">
+                    factusync@@server:~/@provider
+                </MudText>
+            </div>
+            <div class="d-flex align-center gap-1">
+                <MudIconButton Icon="@Icons.Material.Filled.Refresh" Size="Size.Small" OnClick="Reiniciar" Style="color: #9399b2;" Title="Reiniciar Túnel" />
+                <MudIconButton Icon="@Icons.Material.Filled.DeleteSweep" Size="Size.Small" OnClick="Limpiar" Style="color: #9399b2;" Title="Limpiar Consola" />
+            </div>
+        </div>
+        
+        <!-- Área de Texto de la Terminal -->
+        <div id="terminal-container" class="pa-4" Style="height: calc(100% - 40px); overflow-y: auto; font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;">
+            <div style="color: #cdd6f4; white-space: pre-wrap; word-break: break-all; line-height: 1.5; font-size: 0.9rem;">
+                @((MarkupString)consoleOutput)
+                <span class="cursor">_</span>
+            </div>
+        </div>
+    </MudPaper>
+</MudContainer>
+
+<style>
+    #terminal-container::-webkit-scrollbar {
+        width: 8px;
+    }
+    #terminal-container::-webkit-scrollbar-track {
+        background: #11111b;
+    }
+    #terminal-container::-webkit-scrollbar-thumb {
+        background: #313244;
+        border-radius: 4px;
+    }
+    #terminal-container::-webkit-scrollbar-thumb:hover {
+        background: #45475a;
+    }
+    
+    .cursor {
+        animation: blink 1s infinite;
+        color: #89b4fa;
+        font-weight: bold;
+    }
+
+    @@keyframes blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0; }
+    }
+</style>
+
+@code {
+    private string consoleOutput = "";
+    private string publicUrl = "";
+    private string provider = "zrok";
+    private bool disposed = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarEstado();
+        _ = IniciarSondeo(); // Iniciar vigilancia
+    }
+
+    private async Task IniciarSondeo()
+    {
+        while (!disposed)
+        {
+            try {
+                var response = await Http.GetFromJsonAsync<LogResponse>("api/config/tunnel/log");
+                if (response != null && consoleOutput != response.log)
+                {
+                    consoleOutput = response.log;
+                    StateHasChanged();
+                    _ = ScrollToBottom();
+                    
+                    // Si el log ha cambiado, es probable que la URL también
+                    _ = CargarEstado();
+                }
+            } catch { }
+            await Task.Delay(2000); // Consultar cada 2 segundos
+        }
+    }
+
+    private async Task CargarEstado()
+    {
+        try {
+            var config = await Http.GetFromJsonAsync<GlobalConfig>("api/config/global");
+            if (config?.Tunnel != null)
+            {
+                publicUrl = config.Tunnel.CurrentUrl;
+                provider = config.Tunnel.Provider;
+            }
+        } catch { }
+    }
+
+    private async Task ScrollToBottom()
+    {
+        try {
+            await JS.InvokeVoidAsync("eval", "document.getElementById('terminal-container').scrollTop = document.getElementById('terminal-container').scrollHeight");
+        } catch { }
+    }
+
+    private async Task CopyUrl()
+    {
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", publicUrl);
+    }
+
+    private void Limpiar()
+    {
+        consoleOutput = "";
+        StateHasChanged();
+    }
+
+    private async Task Reiniciar()
+    {
+        await Http.PostAsync("api/config/zrok/restart", null);
+        await Task.Delay(500);
+        consoleOutput = "";
+    }
+
+    public void Dispose()
+    {
+        disposed = true;
+    }
+
+    public class LogResponse { public string log { get; set; } = ""; }
+}

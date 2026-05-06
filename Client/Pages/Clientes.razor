@@ -17,10 +17,28 @@
                        OnKeyUp="@Buscar" 
                        Immediate="true" />
         
-        <div class="d-flex overflow-x-auto gap-2 no-scrollbar">
-            <MudChip T="int" Variant="Variant.Filled" Color="@(filtroActivo == 0 ? Color.Primary : Color.Default)" OnClick="@(() => SetFiltro(0))" Style="@(filtroActivo == 0 ? "background-color: #004e92;" : "background-color: #e9ecef; color: #495057;")">TODOS</MudChip>
-            <MudChip T="int" Variant="Variant.Filled" Color="@(filtroActivo == 1 ? Color.Primary : Color.Default)" OnClick="@(() => SetFiltro(1))" Style="@(filtroActivo == 1 ? "background-color: #004e92;" : "background-color: #e9ecef; color: #495057;")">CON PEDIDOS</MudChip>
-            <MudChip T="int" Variant="Variant.Filled" Color="@(filtroActivo == 2 ? Color.Primary : Color.Default)" OnClick="@(() => SetFiltro(2))" Style="@(filtroActivo == 2 ? "background-color: #004e92;" : "background-color: #e9ecef; color: #495057;")">SIN PEDIDOS</MudChip>
+        <div class="d-flex align-center gap-4 flex-wrap">
+            <div class="flex-grow-1" style="min-width: 250px;">
+                <MudSelect T="string" Label="Filtrar por Ruta" @bind-Value="filtroRuta" 
+                           Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" 
+                           OnClearButtonClick="@(() => LoadData())"
+                           Placeholder="Todas las rutas"
+                           SelectedValuesChanged="@(() => LoadData())"
+                           AdornmentIcon="@Icons.Material.Filled.Map" AdornmentColor="Color.Primary">
+                    @if (rutas != null)
+                    {
+                        @foreach (var r in rutas)
+                        {
+                            <MudSelectItem Value="@r.CODRUT">@r.DESRUT (@r.CODRUT)</MudSelectItem>
+                        }
+                    }
+                </MudSelect>
+            </div>
+            <div class="d-flex gap-2 no-scrollbar">
+                <MudChip T="int" Variant="Variant.Filled" Color="@(filtroActivo == 0 ? Color.Primary : Color.Default)" OnClick="@(() => SetFiltro(0))" Style="@(filtroActivo == 0 ? "background-color: #004e92;" : "background-color: #e9ecef; color: #495057;")">TODOS</MudChip>
+                <MudChip T="int" Variant="Variant.Filled" Color="@(filtroActivo == 1 ? Color.Primary : Color.Default)" OnClick="@(() => SetFiltro(1))" Style="@(filtroActivo == 1 ? "background-color: #004e92;" : "background-color: #e9ecef; color: #495057;")">CON PEDIDOS</MudChip>
+                <MudChip T="int" Variant="Variant.Filled" Color="@(filtroActivo == 2 ? Color.Primary : Color.Default)" OnClick="@(() => SetFiltro(2))" Style="@(filtroActivo == 2 ? "background-color: #004e92;" : "background-color: #e9ecef; color: #495057;")">SIN PEDIDOS</MudChip>
+            </div>
         </div>
     </MudPaper>
 
@@ -68,9 +86,7 @@
     else if (clientesFiltrados != null)
     {
         <MudStack Spacing="3">
-            @foreach (var c in clientesFiltrados)
-            {
-                var ventas7d = GetVentas7d(c.Codigo);
+            <Virtualize Items="@clientesFiltrados.ToList()" Context="c">
                 <MudPaper Elevation="0" Class="pa-4 rounded-xl client-card border border-solid" Style="background-color: white; border-color: #f1f3f5;">
                     <div class="d-flex align-center">
                         <MudAvatar Color="Color.Primary" Variant="Variant.Filled" Size="Size.Large" Class="mr-4 rounded-lg shadow-sm" Style="background-color: #004e92;">
@@ -82,7 +98,15 @@
                                 <div>
                                     <MudText Typo="Typo.body1" Class="font-weight-bold" Style="color: #1a1c1e;">@c.Nombre</MudText>
                                     <MudText Typo="Typo.caption" Style="color: #004e92; font-weight: bold;">@c.Codigo <span style="color: #adb5bd;">• @(string.IsNullOrEmpty(c.PROCLI) ? "Sin Ubicación" : c.PROCLI)</span></MudText>
+                                    @if (!string.IsNullOrEmpty(c.NombreRuta))
+                                    {
+                                        <div class="d-flex align-center mt-1">
+                                            <MudIcon Icon="@Icons.Material.Filled.Route" Size="Size.Small" Color="Color.Info" Class="mr-1" />
+                                            <MudText Typo="Typo.caption" Style="color: #1a73e8; font-weight: 600;">Ruta: @c.NombreRuta</MudText>
+                                        </div>
+                                    }
                                 </div>
+                                @{ var ventas7d = GetVentas7d(c.Codigo); }
                                 @if (ventas7d > 0)
                                 {
                                     <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled" Style="font-size: 10px; font-weight: bold;">ACTIVO</MudChip>
@@ -109,7 +133,7 @@
                         </div>
                     </div>
                 </MudPaper>
-            }
+            </Virtualize>
         </MudStack>
     }
 
@@ -129,8 +153,10 @@
 @code {
     private List<Cliente>? clientes;
     private List<Pedido>? pedidos;
+    private List<Ruta>? rutas;
     private bool cargando = true;
     private string busqueda = "";
+    private string? filtroRuta;
     private int filtroActivo = 0; // 0: Todos, 1: Con Pedidos, 2: Sin Pedidos
     private System.Timers.Timer? debounceTimer;
 
@@ -143,14 +169,23 @@
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadRutas();
         await LoadData();
+    }
+
+    private async Task LoadRutas()
+    {
+        try { rutas = await Http.GetFromJsonAsync<List<Ruta>>("api/rutas"); } catch { }
     }
 
     private async Task LoadData()
     {
         cargando = true;
         try {
-            var clientesTask = Http.GetFromJsonAsync<List<Cliente>>($"api/clientes?busqueda={busqueda}");
+            var url = $"api/clientes?busqueda={busqueda}";
+            if (!string.IsNullOrEmpty(filtroRuta)) url += $"&ruta={filtroRuta}";
+            
+            var clientesTask = Http.GetFromJsonAsync<List<Cliente>>(url);
             var pedidosTask = Http.GetFromJsonAsync<List<Pedido>>("api/pedidos");
             
             await Task.WhenAll(clientesTask, pedidosTask);

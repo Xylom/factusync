@@ -7,7 +7,7 @@
     <!-- Header Section -->
     <div class="mb-6">
         <MudText Typo="Typo.overline" Class="font-weight-bold" Style="color: #0056b3; letter-spacing: 1px;">INVENTARIO DE ALMACÉN</MudText>
-        <MudText Typo="Typo.h4" Class="font-weight-bold" Style="color: #1a1c1e;">Catálogo de Productos</MudText>
+        <MudText Typo="Typo.h4" Class="font-weight-bold" Style="color: #1a1c1e;">Artículos</MudText>
         <MudText Typo="Typo.body2" Class="mt-2" Style="color: #6c757d; max-width: 600px;">
             Explore suministros de calidad empresarial y componentes industriales con sincronización de stock en tiempo real desde el sistema central.
         </MudText>
@@ -80,7 +80,7 @@
     else
     {
         <MudGrid Spacing="3">
-            @foreach (var art in articulos)
+            @foreach (var art in PagedArticulos)
             {
                 <MudItem xs="12" sm="6" md="4" lg="3">
                     <MudCard Elevation="0" Class="rounded-xl h-100 product-card border border-solid" Style="border-color: #f1f3f5;">
@@ -133,6 +133,13 @@
                 </MudItem>
             }
         </MudGrid>
+        
+        @if (articulos != null && articulos.Count > _rowsPerPage)
+        {
+            <div class="d-flex justify-center mt-8">
+                <MudPagination Count="@((articulos.Count + _rowsPerPage - 1) / _rowsPerPage)" @bind-Selected="@_page" Color="Color.Primary" Class="mud-elevation-1 rounded-xl bg-white pa-2" />
+            </div>
+        }
     }
 
     <div class="pb-10"></div>
@@ -170,6 +177,10 @@
     private string busqueda = "";
     private string familiaSeleccionada = "";
     private System.Timers.Timer? debounceTimer;
+    
+    private int _page = 1;
+    private int _rowsPerPage = 24;
+    private IEnumerable<Articulo> PagedArticulos => articulos?.Skip((_page - 1) * _rowsPerPage).Take(_rowsPerPage) ?? Array.Empty<Articulo>();
 
     protected override async Task OnInitializedAsync()
     {
@@ -193,6 +204,7 @@
                 url += $"&familia={familiaSeleccionada}";
                 
             articulos = await Http.GetFromJsonAsync<List<Articulo>>(url);
+            _page = 1; // Reset to first page on search
         } catch { }
         finally {
             cargando = false;

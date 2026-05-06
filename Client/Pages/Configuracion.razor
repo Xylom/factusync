@@ -25,9 +25,9 @@
     else
     {
         <div class="mb-10">
-            <MudText Typo="Typo.overline" Class="font-weight-bold" Style="color: #0056b3; letter-spacing: 1.5px;">CENTRO DE CONTROL</MudText>
-            <MudText Typo="Typo.h4" Class="font-weight-bold" Style="color: #1a1c1e;">Configuración Avanzada</MudText>
-            <MudText Typo="Typo.body2" Style="color: #6c757d;">Gestione impuestos, permisos de agentes y parámetros globales del sistema.</MudText>
+            <MudText Typo="Typo.overline" Class="font-weight-bold" Style="color: #0056b3; letter-spacing: 1.5px;">AJUSTES DEL SISTEMA</MudText>
+            <MudText Typo="Typo.h4" Class="font-weight-bold" Style="color: #1a1c1e;">Configuraciones</MudText>
+            <MudText Typo="Typo.body2" Style="color: #6c757d;">Gestione impuestos, permisos de agentes, rutas y conectividad remota.</MudText>
         </div>
 
         <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="px-0 pt-6" Color="Color.Primary" Variant="Variant.Text" Class="custom-tabs">
@@ -191,6 +191,103 @@
                     }
                 </MudPaper>
             </MudTabPanel>
+
+            <!-- Tab 4: Conectividad (ngrok/zrok) -->
+            <MudTabPanel Text="Túnel Internet" Icon="@Icons.Material.Filled.Language">
+                <MudPaper Elevation="0" Class="pa-6 rounded-xl border border-solid" Style="background-color: white; border-color: #e9ecef;">
+                    <div class="d-flex justify-space-between align-center mb-6">
+                        <div>
+                            <MudText Typo="Typo.h6" Class="font-weight-bold">Conectividad Remota (Túnel Seguro)</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Permite el acceso desde internet sin configurar el router.</MudText>
+                        </div>
+                        <MudSwitch T="bool" @bind-Value="config.Tunnel.Enabled" Color="Color.Primary" Label="@(config.Tunnel.Enabled ? "ACTIVO" : "INACTIVO")" />
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(config.Tunnel.CurrentUrl))
+                    {
+                        <div class="mb-6 pa-4 rounded-xl d-flex align-center justify-space-between shadow-sm" style="background: linear-gradient(90deg, #e3f2fd 0%, #ffffff 100%); border: 1px solid #90caf9;">
+                            <div class="d-flex align-center">
+                                <MudIcon Icon="@Icons.Material.Filled.CloudDone" Color="Color.Primary" Class="mr-3" />
+                                <div>
+                                    <MudText Typo="Typo.caption" Style="color: #1976d2; font-weight: bold; text-transform: uppercase;">Túnel Activo (@config.Tunnel.Status)</MudText>
+                                    <MudText Typo="Typo.body1" Class="font-weight-bold" Style="color: #0d47a1;">@config.Tunnel.CurrentUrl</MudText>
+                                </div>
+                            </div>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.ContentCopy" 
+                                       Size="Size.Small" OnClick="(() => CopyToClipboard(config.Tunnel.CurrentUrl))" Class="rounded-lg">
+                                COPIAR
+                            </MudButton>
+                        </div>
+                    }
+                    else if (config.Tunnel.Status == "Error" || !string.IsNullOrEmpty(config.Tunnel.LastErrorMessage))
+                    {
+                        <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="mb-6 rounded-lg shadow-sm">
+                            <b>ERROR:</b> @config.Tunnel.LastErrorMessage
+                        </MudAlert>
+                    }
+                    else if (config.Tunnel.Status != "Inactivo")
+                    {
+                        <div class="mb-6 pa-4 rounded-xl d-flex align-center shadow-sm" style="background-color: #fff9c4; border: 1px solid #fbc02d;">
+                            <MudProgressCircular Color="Color.Warning" Size="Size.Small" Indeterminate="true" Class="mr-3" />
+                            <MudText Typo="Typo.body2"><b>Estado:</b> @config.Tunnel.Status</MudText>
+                        </div>
+                    }
+
+                    <MudGrid>
+                        <MudItem xs="12" md="4">
+                            <MudSelect T="string" @bind-Value="config.Tunnel.Provider" Label="Proveedor" Variant="Variant.Filled" DisableUnderLine="true" Class="rounded-lg bg-light">
+                                <MudSelectItem Value="@("ngrok")">ngrok (Recomendado)</MudSelectItem>
+                                <MudSelectItem Value="@("zrok")">zrok (Open Source)</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" md="2">
+                            <MudNumericField @bind-Value="config.Tunnel.LocalPort" Label="Puerto Local" 
+                                             Variant="Variant.Filled" DisableUnderLine="true" 
+                                             Class="rounded-lg bg-light" />
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudTextField @bind-Value="config.Tunnel.AuthToken" 
+                                          Label="@(config.Tunnel.Provider == "ngrok" ? "Authtoken (de ngrok.com)" : "Token de Acceso (zrok enable)")" 
+                                          Variant="Variant.Filled" DisableUnderLine="true" 
+                                          InputType="InputType.Password"
+                                          Class="rounded-lg bg-light" 
+                                          HelperText="@(config.Tunnel.Provider == "ngrok" ? "Obtén tu Authtoken en dashboard.ngrok.com" : "Obtén tu token en zrok.io")" />
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudTextField @bind-Value="config.Tunnel.ReservedName" 
+                                          Label="@(config.Tunnel.Provider == "ngrok" ? "Dominio Estático (Opcional)" : "Nombre Reservado (Opcional)")" 
+                                          Variant="Variant.Filled" DisableUnderLine="true" 
+                                          Placeholder="@(config.Tunnel.Provider == "ngrok" ? "ej: mi-app.ngrok-free.app" : "ej: factusync-miempresa")"
+                                          Class="rounded-lg bg-light" 
+                                          HelperText="@(config.Tunnel.Provider == "ngrok" ? "Si tienes un dominio gratuito en ngrok, ponlo aquí." : "Si reservaste un nombre en zrok, ponlo aquí.")" />
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudTextField @bind-Value="config.Tunnel.ManualUrl" Label="URL Manual (Opcional)" 
+                                          Variant="Variant.Filled" DisableUnderLine="true" 
+                                          Placeholder="https://..."
+                                          Class="rounded-lg bg-light" HelperText="Forzar una URL si la detección falla." />
+                        </MudItem>
+                    </MudGrid>
+
+                    <div class="mt-6 d-flex justify-end">
+                        <MudButton Variant="Variant.Filled" 
+                                   Color="Color.Info" 
+                                   StartIcon="@Icons.Material.Filled.PlayArrow" 
+                                   OnClick="ProbarTunnel" 
+                                   Disabled="guardando"
+                                   Class="rounded-lg px-6">
+                            REINICIAR TÚNEL @config.Tunnel.Provider.ToUpper()
+                        </MudButton>
+                    </div>
+
+                    <div class="mt-6 pa-4 rounded-lg" style="background-color: #fff9c4; border: 1px dashed #fbc02d;">
+                        <MudText Typo="Typo.caption" Style="color: #616161;">
+                            <b>Nota:</b> El ejecutable (<code>ngrok.exe</code> o <code>zrok.exe</code>) debe estar en su carpeta correspondiente dentro de <code>/Api/</code>. 
+                            Usamos el puerto <b>44373</b> por defecto.
+                        </MudText>
+                    </div>
+                </MudPaper>
+            </MudTabPanel>
         </MudTabs>
 
         <div class="fixed-actions px-4 py-3">
@@ -305,5 +402,43 @@
         }
         catch { Snackbar.Add("Error de conexión", Severity.Error); }
         finally { guardando = false; }
+    }
+    
+    private async Task ProbarTunnel()
+    {
+        guardando = true;
+        try
+        {
+            // 1. Guardar cambios
+            await Http.PostAsJsonAsync("api/config/global", config);
+            
+            // 2. Iniciar túnel
+            var response = await Http.PostAsync("api/config/zrok/restart", null);
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add($"Iniciando {config.Tunnel.Provider}... buscando URL pública", Severity.Info);
+                
+                // 3. Vigilancia activa: Intentar recuperar la URL cada 2 seg durante 15 seg
+                for(int i=0; i<8; i++) 
+                {
+                    await Task.Delay(2000);
+                    var updatedConfig = await Http.GetFromJsonAsync<GlobalConfig>("api/config/global");
+                    if (updatedConfig?.Tunnel != null && !string.IsNullOrEmpty(updatedConfig.Tunnel.CurrentUrl))
+                    {
+                        config.Tunnel.CurrentUrl = updatedConfig.Tunnel.CurrentUrl;
+                        Snackbar.Add("¡URL detectada con éxito!", Severity.Success);
+                        StateHasChanged();
+                        break;
+                    }
+                }
+            }
+        }
+        catch { Snackbar.Add("Error al intentar iniciar el túnel", Severity.Error); }
+        finally { guardando = false; }
+    }
+    private async Task CopyToClipboard(string text)
+    {
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+        Snackbar.Add("Copiado al portapapeles", Severity.Success);
     }
 }

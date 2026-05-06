@@ -1,0 +1,165 @@
+@page "/facturas"
+@inject HttpClient Http
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject IJSRuntime JS
+@inject NavigationManager NavManager
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="px-4 py-6" Style="background-color: #f8f9fa; min-height: 100vh; position: relative;">
+    
+    <!-- Branding & Header -->
+    <div class="d-flex justify-space-between align-center mb-6">
+        <div>
+            <MudText Typo="Typo.h4" Class="font-weight-bold" Style="color: #1a1c1e;">Listado de Facturas</MudText>
+            <MudText Typo="Typo.body2" Style="color: #6c757d;">Gestiona las facturas generadas.</MudText>
+        </div>
+        <MudAvatar Color="Color.Primary" Variant="Variant.Filled" Size="Size.Large" Class="shadow-sm">XY</MudAvatar>
+    </div>
+
+    <!-- Search & Filter Bar -->
+    <div class="d-flex gap-2 mb-6 align-center">
+        <MudPaper Elevation="0" Class="flex-grow-1 pa-1 rounded-lg d-flex align-center" Style="background-color: white; border: 1px solid #dee2e6;">
+            <MudIcon Icon="@Icons.Material.Filled.Search" Class="mx-2" Style="color: #adb5bd;" />
+            <MudTextField @bind-Value="busqueda" Placeholder="Buscar factura o cliente..." Variant="Variant.Text" Margin="Margin.Dense" Class="flex-grow-1" DisableUnderLine="true" Immediate="true" />
+        </MudPaper>
+        <MudIconButton Icon="@Icons.Material.Filled.FilterList" Variant="Variant.Filled" 
+                       Class="rounded-lg shadow-none"
+                       Style="@($"background-color: {(mostrarFiltros ? "#0D47A1" : "#e9ecef")}; color: {(mostrarFiltros ? "white" : "#495057")}; height: 48px; width: 48px;")"
+                       OnClick="@(() => mostrarFiltros = !mostrarFiltros)" />
+    </div>
+
+    <!-- Panel de Filtros Avanzados -->
+    <MudCollapse Expanded="mostrarFiltros" Class="mb-6">
+        <MudPaper Elevation="0" Class="pa-4 rounded-xl border border-solid" Style="border-color: #dee2e6; background-color: #fdfdfd;">
+            <MudGrid Spacing="2" Justify="Justify.FlexStart" Class="align-end">
+                <MudItem xs="12" sm="6" md="4">
+                    <MudDateRangePicker @bind-DateRange="_dateRange" Label="Rango de Fechas" 
+                                       PlaceholderStart="Desde" PlaceholderEnd="Hasta" 
+                                       Variant="Variant.Outlined" Margin="Margin.Dense" Color="Color.Primary" />
+                </MudItem>
+                <MudItem xs="6" sm="3" md="2">
+                    <MudSelect T="string" Label="Serie" @bind-Value="filtroSerie" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                        @for(int i=1; i<=9; i++) {
+                            var serieVal = i.ToString();
+                            <MudSelectItem Value="@serieVal">Serie @serieVal</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="12" md="3">
+                    <div class="d-flex gap-2">
+                         <MudButton OnClick="LoadFacturas" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh" FullWidth="true" Class="rounded-lg py-2">Filtrar</MudButton>
+                         <MudIconButton OnClick="LimpiarFiltros" Icon="@Icons.Material.Filled.LayersClear" Color="Color.Default" Class="rounded-lg border border-solid" Style="border-color: #dee2e6;" />
+                    </div>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    </MudCollapse>
+
+    <!-- List Section -->
+    @if (cargando)
+    {
+        <div class="d-flex justify-center my-10">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+        </div>
+    }
+    else
+    {
+        <MudTable Items="facturasFiltradas" Dense="true" Hover="true" Class="mud-elevation-0 border border-solid rounded-xl" Style="border-color: #dee2e6; overflow: hidden;" Breakpoint="Breakpoint.Sm">
+            <HeaderContent>
+                <MudTh>ID Factura</MudTh>
+                <MudTh>Fecha</MudTh>
+                <MudTh>Cliente</MudTh>
+                <MudTh>Total</MudTh>
+                <MudTh>Acciones</MudTh>
+            </HeaderContent>
+            <RowTemplate Context="f">
+                <MudTd DataLabel="ID Factura">
+                    <MudText Typo="Typo.body2" Class="font-weight-bold" Style="color: #1e88e5;">FAC-@f.TIPFAC-@f.CODFAC.ToString().PadLeft(3, '0')</MudText>
+                </MudTd>
+                <MudTd DataLabel="Fecha">
+                    <MudText Typo="Typo.body2">@f.FECFAC.ToShortDateString()</MudText>
+                </MudTd>
+                <MudTd DataLabel="Cliente">
+                    <MudText Typo="Typo.body2" Class="font-weight-bold">@f.CNOFAC</MudText>
+                    <MudText Typo="Typo.caption" Style="color: #6c757d;">NIT: @f.CNIFAC</MudText>
+                </MudTd>
+                <MudTd DataLabel="Total">
+                    <MudText Typo="Typo.body2" Class="font-weight-bold">€ @f.TOTFAC.ToString("N2")</MudText>
+                </MudTd>
+                <MudTd DataLabel="Acciones">
+                    <MudButtonGroup Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">
+                        <MudTooltip Text="Ver Factura">
+                            <MudIconButton Icon="@Icons.Material.Filled.Visibility" Color="Color.Primary" Size="Size.Small"
+                                           OnClick="@(() => VerFactura(f))"></MudIconButton>
+                        </MudTooltip>
+                    </MudButtonGroup>
+                </MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager />
+            </PagerContent>
+        </MudTable>
+    }
+</MudContainer>
+
+@code {
+    private List<Factura> facturas = new();
+    private bool cargando = true;
+    private bool mostrarFiltros = false;
+    private string busqueda = "";
+    
+    // Filtros
+    private DateRange _dateRange = new DateRange(DateTime.Now.AddMonths(-1).Date, DateTime.Now.Date);
+    private string? filtroSerie;
+
+    private IEnumerable<Factura> facturasFiltradas => facturas
+        .Where(f => string.IsNullOrEmpty(busqueda) || 
+                    (f.CNOFAC?.Contains(busqueda, StringComparison.OrdinalIgnoreCase) ?? false) || 
+                    (f.CNIFAC?.Contains(busqueda, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    f.CODFAC.ToString().Contains(busqueda));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadFacturas();
+    }
+
+    private async Task LoadFacturas()
+    {
+        cargando = true;
+        try {
+            var query = new List<string>();
+            
+            if (_dateRange.Start.HasValue) 
+                query.Add($"desde={_dateRange.Start.Value:yyyy-MM-dd}");
+            if (_dateRange.End.HasValue) 
+                query.Add($"hasta={_dateRange.End.Value:yyyy-MM-dd}");
+            if (!string.IsNullOrEmpty(filtroSerie))
+                query.Add($"serie={filtroSerie}");
+
+            string url = "/api/facturas";
+            if (query.Any()) url += "?" + string.Join("&", query);
+
+            facturas = await Http.GetFromJsonAsync<List<Factura>>(url) ?? new();
+        } 
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error cargando facturas: {ex.Message}", Severity.Error);
+        }
+        finally { cargando = false; }
+    }
+
+    private void LimpiarFiltros()
+    {
+        _dateRange = new DateRange(DateTime.Now.AddMonths(-1).Date, DateTime.Now.Date);
+        filtroSerie = null;
+        busqueda = "";
+        _ = LoadFacturas();
+    }
+
+    private async Task VerFactura(Factura f)
+    {
+        var parameters = new DialogParameters { ["Factura"] = f };
+        var options = new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
+        await DialogService.ShowAsync<FacturaDetalleDialog>("Detalle de Factura", parameters, options);
+    }
+}

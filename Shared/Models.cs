@@ -77,6 +77,7 @@ namespace FactuSync.Shared
         public decimal? IM4CLI { get; set; }
         public decimal? IM5CLI { get; set; }
         public string RUTCLI { get; set; } = string.Empty;
+        public string? NombreRuta { get; set; }
         public string SWICLI { get; set; } = string.Empty;
         public string GIRCLI { get; set; } = string.Empty;
         public string CUWCLI { get; set; } = string.Empty;
@@ -132,6 +133,13 @@ namespace FactuSync.Shared
         public string CO10CLI { get; set; } = string.Empty;
         public decimal? IM10CLI { get; set; }
         public string AR10CLI { get; set; } = string.Empty;
+    }
+
+    public class Ruta
+    {
+        public string CODRUT { get; set; } = string.Empty;
+        public string DESRUT { get; set; } = string.Empty;
+        public double? AGERUT { get; set; }
     }
 
     public class Proveedor
@@ -640,6 +648,20 @@ namespace FactuSync.Shared
     {
         public Dictionary<string, TaxItem> IvaConfig { get; set; } = new();
         public OrderSettings OrderSettings { get; set; } = new();
+        public TunnelConfig Tunnel { get; set; } = new();
+    }
+
+    public class TunnelConfig
+    {
+        public bool Enabled { get; set; }
+        public string Provider { get; set; } = "zrok"; 
+        public string AuthToken { get; set; } = string.Empty;
+        public string ReservedName { get; set; } = string.Empty;
+        public int LocalPort { get; set; } = 44373;
+        public string ManualUrl { get; set; } = string.Empty;
+        public string CurrentUrl { get; set; } = string.Empty;
+        public string Status { get; set; } = "Inactivo"; // Nuevo
+        public string LastErrorMessage { get; set; } = string.Empty; // Nuevo
     }
 
     public class OrderSettings
@@ -692,5 +714,44 @@ namespace FactuSync.Shared
         public string FullPath { get; set; } = string.Empty;
         public bool IsDirectory { get; set; }
         public bool IsDatabase { get; set; }
+    }
+
+    public class Factura
+    {
+        public string TIPFAC { get; set; } = string.Empty;
+        public double CODFAC { get; set; }
+        public string REFFAC { get; set; } = string.Empty;
+        public DateTime FECFAC { get; set; }
+        public DateTime HORFAC { get; set; }
+        public double ESTFAC { get; set; }
+        public double CLIFAC { get; set; }
+        public string CNOFAC { get; set; } = string.Empty;
+        public string CDOFAC { get; set; } = string.Empty;
+        public string CNIFAC { get; set; } = string.Empty;
+        public string TELFAC { get; set; } = string.Empty;
+        public decimal NET1FAC { get; set; }
+        public decimal NET2FAC { get; set; }
+        public decimal NET3FAC { get; set; }
+        public decimal TOTFAC { get; set; }
+        public double EMAFAC { get; set; } // Estado Correo (0 = Sin enviar, 1 = Enviado)
+    }
+
+    public class FacturaLinea
+    {
+        public string CodigoArticulo { get; set; } = string.Empty;
+        public string DescripcionArticulo { get; set; } = string.Empty;
+        public decimal Cantidad { get; set; }
+        public decimal Precio { get; set; }
+        public decimal Descuento1 { get; set; }
+        public decimal Iva { get; set; }
+        public decimal Total { get; set; }
+    }
+
+    public class Cobro
+    {
+        public double? CODCOB { get; set; }
+        public DateTime? FECCOB { get; set; }
+        public decimal? IMPCOB { get; set; }
+        public string CPTCOB { get; set; } = string.Empty;
     }
 }

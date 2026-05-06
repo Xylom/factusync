@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <PlatformTarget>x86</PlatformTarget>
+    <OutputType>WinExe</OutputType>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,6 +17,15 @@
   <ItemGroup>
     <ProjectReference Include="..\Shared\FactuSync.Shared.csproj" />
     <ProjectReference Include="..\Client\FactuSync.Client.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="zrok\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="ngrok\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

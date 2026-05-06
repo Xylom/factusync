@@ -17,17 +17,19 @@
     
     <MudDrawer @bind-Open="@_drawerOpen" Elevation="1" ClipMode="DrawerClipMode.Always" Class="border-none">
         <MudDrawerHeader Class="pa-4">
-            <MudText Typo="Typo.h6" Class="font-weight-bold">Centro de Control</MudText>
+            <MudText Typo="Typo.h6" Class="font-weight-bold">Configuraciones</MudText>
         </MudDrawerHeader>
         <MudNavMenu Class="mt-2">
             <MudNavLink Href="/dashboard" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.SpaceDashboard" Class="rounded-lg mx-2 mb-1">Inicio</MudNavLink>
             <MudNavLink Href="/clientes" Icon="@Icons.Material.Filled.PersonSearch" Class="rounded-lg mx-2 mb-1">Clientes</MudNavLink>
             <MudNavLink Href="/pedidos" Icon="@Icons.Material.Filled.Receipt" Class="rounded-lg mx-2 mb-1">Mis Pedidos</MudNavLink>
-            <MudNavLink Href="/articulos" Icon="@Icons.Material.Filled.Category" Class="rounded-lg mx-2 mb-1">Catálogo</MudNavLink>
+            <MudNavLink Href="/facturas" Icon="@Icons.Material.Filled.RequestQuote" Class="rounded-lg mx-2 mb-1">Facturas</MudNavLink>
+            <MudNavLink Href="/articulos" Icon="@Icons.Material.Filled.Category" Class="rounded-lg mx-2 mb-1">Artículos</MudNavLink>
             
             @if (isBoss)
             {
-                <MudNavLink Href="/configuracion" Icon="@Icons.Material.Filled.AdminPanelSettings" Class="rounded-lg mx-2 mb-1">Centro de Control</MudNavLink>
+                <MudNavLink Href="/configuracion" Icon="@Icons.Material.Filled.AdminPanelSettings" Class="rounded-lg mx-2 mb-1">Configuraciones</MudNavLink>
+                <MudNavLink Href="/terminal" Icon="@Icons.Material.Filled.Terminal" Class="rounded-lg mx-2 mb-1">Terminal Túnel</MudNavLink>
             }
             
             <MudDivider Class="my-4 mx-4" />

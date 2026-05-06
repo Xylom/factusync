@@ -1,5 +1,6 @@
 using FactuSync.Api.Services;
 using FactuSync.Shared;
+using System.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,22 +21,28 @@ builder.Services.AddScoped<IFactusolService, FactusolService>();
 
 var app = builder.Build();
 
+// Iniciar Túnel zrok si está configurado
+StartZrok(app.Configuration, app.Services);
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
 app.UseHttpsRedirection();
-app.UseBlazorFrameworkFiles();
-app.UseStaticFiles();
+
+
 app.UseCors("AllowAll");
 app.UseRouting();
 
 // API Endpoints
 var api = app.MapGroup("/api");
 
-api.MapGet("/clientes", async (IFactusolService service, string? busqueda) => 
-    await service.GetClientesAsync(busqueda ?? ""));
+api.MapGet("/clientes", async (IFactusolService service, string? busqueda, string? ruta) => 
+    await service.GetClientesAsync(busqueda ?? "", ruta));
+
+api.MapGet("/rutas", async (IFactusolService service) => 
+    await service.GetRutasAsync());
 
 api.MapGet("/proveedores", async (IFactusolService service) => 
     await service.GetProveedoresAsync());
@@ -153,6 +160,15 @@ api.MapGet("/pedidos", async (IFactusolService service, DateTime? desde, DateTim
 api.MapGet("/pedidos/series", async (IFactusolService service) => Results.Ok(await service.GetSeriesAsync()));
 api.MapGet("/pedidos/siguiente", async (IFactusolService service, string serie) => Results.Ok(await service.GetSiguientePedidoAsync(serie)));
 api.MapGet("/pedidos/almacenes", async (IFactusolService service) => Results.Ok(await service.GetAlmacenesAsync()));
+
+// Facturas Endpoints
+api.MapGet("/facturas/schema", async (IFactusolService service) => Results.Ok(await service.TestSchemaAsync()));
+api.MapGet("/facturas/{serie}/{numero}/lineas", async (IFactusolService service, string serie, double numero) => Results.Ok(await service.GetFacturaLineasAsync(serie, numero)));
+api.MapGet("/facturas/{serie}/{numero}/cobros", async (IFactusolService service, string serie, double numero) => Results.Ok(await service.GetCobrosFacturaAsync(serie, numero)));
+
+api.MapGet("/facturas", async (IFactusolService service, DateTime? desde, DateTime? hasta, string? serie) => 
+    Results.Ok(await service.GetFacturasAsync(desde, hasta, serie)));
+
 api.MapGet("/config/global", (IFactusolService service) => 
 {
     var globalConfig = service.GetGlobalConfig();
@@ -187,5 +203,36 @@ api.MapDelete("/pedidos", async (IFactusolService service, string serie, double 
     return Results.BadRequest(new { message = result.Message });
 });
 
+api.MapGet("/config/tunnel/log", (IFactusolService service) => 
+{
+    return Results.Ok(new { log = service.GetConsoleLog() });
+});
+
+api.MapPost("/config/zrok/restart", async (IFactusolService service) => 
+{
+    await service.RestartTunnelAsync();
+    return Results.Ok(new { message = "Petición de reinicio de túnel enviada" });
+});
+
+app.MapStaticAssets();
 app.MapFallbackToFile("index.html");
 app.Run();
+
+void StartZrok(IConfiguration config, IServiceProvider services)
+{
+    try 
+    {
+        using var scope = services.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<IFactusolService>();
+        // Forzamos el reinicio al arrancar el servidor
+        Task.Run(async () => {
+            await Task.Delay(2000); // Esperar a que el servidor web termine de levantar
+            await service.RestartTunnelAsync();
+        });
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[SISTEMA] Error al iniciar túnel automático: {ex.Message}");
+    }
+}
+

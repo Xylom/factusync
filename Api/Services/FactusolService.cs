@@ -1,14 +1,16 @@
 using System.Data.OleDb;
+using System.Text;
 using FactuSync.Shared;
 
 namespace FactuSync.Api.Services;
 
 public interface IFactusolService
 {
-    Task<List<Cliente>> GetClientesAsync(string busqueda);
+    Task<List<Cliente>> GetClientesAsync(string busqueda, string? ruta = null);
     Task<List<Proveedor>> GetProveedoresAsync();
     Task<List<Articulo>> GetArticulosAsync(string busqueda, int tarifa = 1, string? familia = null);
     Task<List<Familia>> GetFamiliasAsync();
+    Task<List<Ruta>> GetRutasAsync();
     Task<List<Almacen>> GetAlmacenesAsync();
     Task<(bool Success, string Message)> CrearPedidoAsync(Pedido pedido);
     Task<Agente?> LoginAsync(string usuario, string clave);
@@ -17,20 +19,42 @@ public interface IFactusolService
     string GetDbPath();
     Task<List<Pedido>> GetPedidosAsync(DateTime? desde = null, DateTime? hasta = null, string? serie = null, double? agentId = null);
     Task<List<PedidoLinea>> GetPedidoLineasAsync(string tip, double cod);
+    Task<List<Factura>> GetFacturasAsync(DateTime? desde = null, DateTime? hasta = null, string? serie = null);
     Task<(bool Success, string Message)> TestConnectionAsync();
     Task<List<string>> GetSeriesAsync();
+    Task<List<string>> TestSchemaAsync();
+    Task<List<FacturaLinea>> GetFacturaLineasAsync(string serie, double numero);
+    Task<List<Cobro>> GetCobrosFacturaAsync(string serie, double numero);
     Task<double> GetSiguientePedidoAsync(string serie);
     GlobalConfig GetGlobalConfig();
     Task<bool> UpdateGlobalConfigAsync(GlobalConfig newConfig);
     Task<(bool Success, string Message)> EliminarPedidoAsync(string serie, double numero);
     Task<List<Agente>> GetAgentesAsync();
     Task<Pedido?> GetPedidoAsync(string serie, double numero);
+    Task RestartTunnelAsync();
+    string GetConsoleLog();
+    event Action<string>? OnConsoleOutput;
 }
 
 public class FactusolService : IFactusolService
 {
     private readonly IConfiguration _config;
     private readonly IWebHostEnvironment _env;
+    private static string _currentZrokUrl = "";
+    private static string _lastTunnelStatus = "Inactivo";
+    private static string _lastTunnelError = "";
+    private static StringBuilder _consoleLog = new StringBuilder();
+    public event Action<string>? OnConsoleOutput;
+
+    public string GetConsoleLog() => _consoleLog.ToString();
+
+    private void AddToLog(string line) 
+    {
+        _consoleLog.AppendLine(line);
+        OnConsoleOutput?.Invoke(line);
+    }
+
+    public static void SetZrokUrl(string url) { _currentZrokUrl = url; _lastTunnelStatus = "Conectado"; _lastTunnelError = ""; }
 
     public FactusolService(IConfiguration config, IWebHostEnvironment env)
     {
@@ -126,7 +150,7 @@ public class FactusolService : IFactusolService
         return agentes;
     }
 
-    public async Task<List<Cliente>> GetClientesAsync(string busqueda)
+    public async Task<List<Cliente>> GetClientesAsync(string busqueda, string? ruta = null)
     {
         var clientes = new List<Cliente>();
         try 
@@ -134,15 +158,27 @@ public class FactusolService : IFactusolService
             using var connection = new OleDbConnection(GetConnectionString());
             await connection.OpenAsync();
 
-            string query = "SELECT CODCLI, NOFCLI, NOCCLI, NIFCLI, TELCLI, EMACLI, DOMCLI, REQCLI, TARCLI, FPACLI, DT1CLI FROM F_CLI";
+            string query = @"SELECT F_CLI.CODCLI, F_CLI.NOFCLI, F_CLI.NOCCLI, F_CLI.NIFCLI, 
+                                    F_CLI.TELCLI, F_CLI.EMACLI, F_CLI.DOMCLI, F_CLI.REQCLI, 
+                                    F_CLI.TARCLI, F_CLI.FPACLI, F_CLI.DT1CLI, F_CLI.RUTCLI, 
+                                    F_CLI.PROCLI, F_RUT.DESRUT 
+                             FROM F_CLI 
+                             LEFT JOIN F_RUT ON F_CLI.RUTCLI = F_RUT.CODRUT 
+                             WHERE 1=1";
+            
             bool esNumero = double.TryParse(busqueda, out double codigoNum);
 
             if (!string.IsNullOrEmpty(busqueda))
             {
                 if (esNumero)
-                    query += " WHERE CODCLI = ? OR NOCCLI LIKE ? OR NOFCLI LIKE ?";
+                    query += " AND (F_CLI.CODCLI = ? OR F_CLI.NOCCLI LIKE ? OR F_CLI.NOFCLI LIKE ?)";
                 else
-                    query += " WHERE NOCCLI LIKE ? OR NOFCLI LIKE ?";
+                    query += " AND (F_CLI.NOCCLI LIKE ? OR F_CLI.NOFCLI LIKE ?)";
+            }
+
+            if (!string.IsNullOrEmpty(ruta))
+            {
+                query += " AND F_CLI.RUTCLI = ?";
             }
 
             using var command = new OleDbCommand(query, connection);
@@ -161,6 +197,11 @@ public class FactusolService : IFactusolService
                 }
             }
 
+            if (!string.IsNullOrEmpty(ruta))
+            {
+                command.Parameters.Add("?", OleDbType.VarWChar).Value = ruta;
+            }
+
             using var reader = await command.ExecuteReaderAsync();
             while (await reader.ReadAsync())
             {
@@ -176,7 +217,10 @@ public class FactusolService : IFactusolService
                     REQCLI = reader["REQCLI"] != DBNull.Value ? Convert.ToDouble(reader["REQCLI"]) : 0,
                     TARCLI = reader["TARCLI"] != DBNull.Value ? Convert.ToDouble(reader["TARCLI"]) : 1,
                     FPACLI = reader["FPACLI"]?.ToString()?.Trim() ?? "",
-                    DT1CLI = reader["DT1CLI"] != DBNull.Value ? Convert.ToDecimal(reader["DT1CLI"]) : 0
+                    DT1CLI = reader["DT1CLI"] != DBNull.Value ? Convert.ToDecimal(reader["DT1CLI"]) : 0,
+                    RUTCLI = reader["RUTCLI"]?.ToString()?.Trim() ?? "",
+                    PROCLI = reader["PROCLI"]?.ToString()?.Trim() ?? "",
+                    NombreRuta = reader["DESRUT"] != DBNull.Value ? reader["DESRUT"].ToString() : ""
                 });
             }
         } 
@@ -188,6 +232,33 @@ public class FactusolService : IFactusolService
             return GetMockClientes(busqueda);
         }
         return clientes;
+    }
+
+    public async Task<List<Ruta>> GetRutasAsync()
+    {
+        var rutas = new List<Ruta>();
+        try
+        {
+            using var connection = new OleDbConnection(GetConnectionString());
+            await connection.OpenAsync();
+            string query = "SELECT CODRUT, DESRUT, AGERUT FROM F_RUT ORDER BY DESRUT";
+            using var command = new OleDbCommand(query, connection);
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                rutas.Add(new Ruta
+                {
+                    CODRUT = reader["CODRUT"].ToString()?.Trim() ?? "",
+                    DESRUT = reader["DESRUT"].ToString()?.Trim() ?? "",
+                    AGERUT = reader["AGERUT"] != DBNull.Value ? Convert.ToDouble(reader["AGERUT"]) : null
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error fetching rutas: {ex.Message}");
+        }
+        return rutas;
     }
 
     public async Task<List<Familia>> GetFamiliasAsync()
@@ -253,44 +324,29 @@ public class FactusolService : IFactusolService
             using var connection = new OleDbConnection(GetConnectionString());
             await connection.OpenAsync();
             
-            // SOLUCIÓN DUPLICADOS: F_STO tiene una fila por almacén, el LEFT JOIN multiplicaba artículos.
-            // Se usan subconsultas para STOCK y PRELTA_TAR para garantizar UNA fila por artículo.
-            // IMPORTANTE: OLEDB/Access NO soporta '?' dentro de subconsultas correlacionadas.
-            // Al intentarlo, Access trata columnas de F_ART como parámetros desconocidos.
-            // Solución: insertar 'tarifa' (int controlado) directamente en el SQL para esa subconsulta.
-            // Los filtros LIKE siguen usando '?' de forma segura en la cláusula WHERE principal.
-            string query = $@"SELECT 
-                F_ART.CODART   AS CODART,
-                F_ART.DESART   AS DESART,
-                F_ART.FAMART   AS FAMART,
-                F_ART.IMGART   AS IMGART,
-                F_ART.PCOART   AS PCOART,
-                F_ART.DT0ART   AS DT0ART,
-                F_ART.TIVART   AS TIVART,
-                (SELECT SUM(ACTSTO) FROM F_STO WHERE F_STO.ARTSTO = F_ART.CODART) AS STOCK_ACT,
-                (SELECT TOP 1 PRELTA FROM F_LTA WHERE F_LTA.ARTLTA = F_ART.CODART AND F_LTA.TARLTA = {tarifa}) AS PRELTA_TAR
-                FROM F_ART";
+            // 1. Consultar artículos filtrados de forma ultrarrápida (sin subqueries)
+            string query = @"SELECT CODART, DESART, FAMART, IMGART, PCOART, DT0ART, TIVART FROM F_ART";
 
-            if (!string.IsNullOrEmpty(busqueda))
+            bool hasBusqueda = !string.IsNullOrEmpty(busqueda);
+            bool hasFamilia = !string.IsNullOrEmpty(familia);
+
+            if (hasBusqueda)
             {
-                query += " WHERE (F_ART.DESART LIKE ? OR F_ART.CODART LIKE ?)";
-                if (!string.IsNullOrEmpty(familia))
-                    query += " AND F_ART.FAMART = ?";
+                query += " WHERE (DESART LIKE ? OR CODART LIKE ?)";
+                if (hasFamilia) query += " AND FAMART = ?";
             }
-            else if (!string.IsNullOrEmpty(familia))
+            else if (hasFamilia)
             {
-                query += " WHERE F_ART.FAMART = ?";
+                query += " WHERE FAMART = ?";
             }
 
             using var command = new OleDbCommand(query, connection);
-            // Los únicos parámetros '?' que quedan son los filtros LIKE de búsqueda y FAMART
-            if (!string.IsNullOrEmpty(busqueda))
+            if (hasBusqueda)
             {
                 command.Parameters.Add("?", OleDbType.VarWChar).Value = $"%{busqueda}%";
                 command.Parameters.Add("?", OleDbType.VarWChar).Value = $"%{busqueda}%";
             }
-            
-            if (!string.IsNullOrEmpty(familia))
+            if (hasFamilia)
             {
                 command.Parameters.Add("?", OleDbType.VarWChar).Value = familia;
             }
@@ -311,71 +367,73 @@ public class FactusolService : IFactusolService
             {
                 while (await reader.ReadAsync())
                 {
-                    string codart = reader["CODART"].ToString()?.Trim() ?? "?";
-                    string desart = reader["DESART"].ToString()?.Trim() ?? "?";
-
-                    bool  tarifaEsNull = reader["PRELTA_TAR"] == DBNull.Value;
-                    decimal pTar = tarifaEsNull ? 0 : Convert.ToDecimal(reader["PRELTA_TAR"]);
-                    decimal pco  = reader["PCOART"] != DBNull.Value ? Convert.ToDecimal(reader["PCOART"]) : 0;
-
-                    // LOG: explicar por qué la tarifa no cargó precio
-                    if (tarifaEsNull)
-                        Console.WriteLine($"[TARIFA] Art {codart} '{desart}': PRELTA_TAR es NULL => no existe fila en F_LTA para tarifa {tarifa}. PrecioVenta = 0.");
-                    else if (pTar == 0)
-                        Console.WriteLine($"[TARIFA] Art {codart} '{desart}': PRELTA_TAR = 0 en F_LTA (precio registrado en cero para tarifa {tarifa}). PrecioVenta = 0.");
-                    else
-                        Console.WriteLine($"[TARIFA] Art {codart} '{desart}': Tarifa {tarifa} OK => PRELTA_TAR = {pTar}.");
-
-                    // Si no hay precio de tarifa se muestra 0, NO se usa el precio de costo
-                    decimal precioFinal = pTar;
-
                     articulos.Add(new Articulo
                     {
-                        CODART         = codart,
-                        DESART         = desart,
-                        FAMART         = reader["FAMART"].ToString()?.Trim() ?? "",
-                        IMGART         = reader["IMGART"] != DBNull.Value ? reader["IMGART"].ToString()?.Trim() ?? "" : "",
-                        PrecioVenta    = precioFinal,
-                        PRELTA_TAR_RAW = pTar,
-                        PrecioConIva   = conIva,
-                        PCOART         = pco,
-                        DT0ART         = reader["DT0ART"]    != DBNull.Value ? Convert.ToDecimal(reader["DT0ART"])   : 0,
-                        STOART         = reader["STOCK_ACT"] != DBNull.Value ? Convert.ToDouble(reader["STOCK_ACT"]) : 0,
-                        IvaIndex       = reader["TIVART"]    != DBNull.Value ? Convert.ToInt32(reader["TIVART"])     : 0
+                        CODART = reader["CODART"].ToString()?.Trim() ?? "",
+                        DESART = reader["DESART"].ToString()?.Trim() ?? "",
+                        FAMART = reader["FAMART"].ToString()?.Trim() ?? "",
+                        IMGART = reader["IMGART"] != DBNull.Value ? reader["IMGART"].ToString()?.Trim() ?? "" : "",
+                        PCOART = reader["PCOART"] != DBNull.Value ? Convert.ToDecimal(reader["PCOART"]) : 0,
+                        DT0ART = reader["DT0ART"] != DBNull.Value ? Convert.ToDecimal(reader["DT0ART"]) : 0,
+                        IvaIndex = reader["TIVART"] != DBNull.Value ? Convert.ToInt32(reader["TIVART"]) : 0,
+                        PrecioConIva = conIva
                     });
                 }
+            }
+
+            if (articulos.Count == 0) return articulos;
+
+            // Optimización: Cargar stock y precios en diccionarios en memoria 
+            // (evita miles de subqueries individuales = rendimiento extremo)
+            var stockDict = new Dictionary<string, double>();
+            try 
+            {
+                string stockQuery = "SELECT ARTSTO, SUM(ACTSTO) AS STOCK_ACT FROM F_STO GROUP BY ARTSTO";
+                using var cmdStock = new OleDbCommand(stockQuery, connection);
+                using var rdStock = await cmdStock.ExecuteReaderAsync();
+                while (await rdStock.ReadAsync())
+                {
+                    string cod = rdStock["ARTSTO"].ToString()?.Trim() ?? "";
+                    if (!string.IsNullOrEmpty(cod))
+                        stockDict[cod] = rdStock["STOCK_ACT"] != DBNull.Value ? Convert.ToDouble(rdStock["STOCK_ACT"]) : 0;
+                }
+            } 
+            catch { }
+
+            var preciosDict = new Dictionary<string, decimal>();
+            try 
+            {
+                string precioQuery = "SELECT ARTLTA, PRELTA FROM F_LTA WHERE TARLTA = ?";
+                using var cmdPrecio = new OleDbCommand(precioQuery, connection);
+                cmdPrecio.Parameters.Add("?", OleDbType.Double).Value = (double)tarifa;
+                using var rdPrecio = await cmdPrecio.ExecuteReaderAsync();
+                while (await rdPrecio.ReadAsync())
+                {
+                    string cod = rdPrecio["ARTLTA"].ToString()?.Trim() ?? "";
+                    if (!string.IsNullOrEmpty(cod) && !preciosDict.ContainsKey(cod))
+                    {
+                        preciosDict[cod] = rdPrecio["PRELTA"] != DBNull.Value ? Convert.ToDecimal(rdPrecio["PRELTA"]) : 0;
+                    }
+                }
+            }
+            catch { }
+
+            // Mapeo final en memoria, manteniendo la misma lógica exacta original de precios
+            foreach (var art in articulos)
+            {
+                art.STOART = stockDict.TryGetValue(art.CODART, out double stock) ? stock : 0;
+                
+                bool tarifaExists = preciosDict.TryGetValue(art.CODART, out decimal pTar);
+                decimal precioFinal = tarifaExists ? pTar : 0;
+                
+                art.PrecioVenta = precioFinal;
+                art.PRELTA_TAR_RAW = pTar;
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error DB: {ex.Message}");
-            // Fallback extremadamente básico si la query compleja falla
-            Console.WriteLine($"[TARIFA] FALLBACK activado por error en consulta principal. Los artículos mostrarán PrecioVenta = 0 (sin tarifa).");
-            try {
-                using var conn2 = new OleDbConnection(GetConnectionString());
-                await conn2.OpenAsync();
-                string qBasic = "SELECT CODART, DESART, PCOART FROM F_ART";
-                if (!string.IsNullOrEmpty(busqueda)) qBasic += " WHERE DESART LIKE ? OR CODART LIKE ?";
-                using var cmdBasic = new OleDbCommand(qBasic, conn2);
-                if (!string.IsNullOrEmpty(busqueda)) {
-                    cmdBasic.Parameters.Add("?", OleDbType.VarWChar).Value = "%" + busqueda + "%";
-                    cmdBasic.Parameters.Add("?", OleDbType.VarWChar).Value = "%" + busqueda + "%";
-                }
-                using var rd2 = await cmdBasic.ExecuteReaderAsync();
-                while (await rd2.ReadAsync()) {
-                    string cod = rd2["CODART"].ToString()?.Trim() ?? "";
-                    decimal pco = rd2["PCOART"] != DBNull.Value ? Convert.ToDecimal(rd2["PCOART"]) : 0;
-                    Console.WriteLine($"[TARIFA] FALLBACK Art {cod}: PrecioVenta = 0 (no se pudo consultar tarifa {tarifa}). Costo en BD = {pco}.");
-                    articulos.Add(new Articulo {
-                        CODART = cod,
-                        DESART = rd2["DESART"].ToString()?.Trim() ?? "",
-                        PrecioVenta = 0,   // Sin tarifa => precio 0, no se expone el costo
-                        PCOART = pco
-                    });
-                }
-            } catch { /* Ignorar errores en el fallback */ }
+            Console.WriteLine($"Error obteniendo artículos (optimizado): {ex.Message}");
         }
-
         return articulos;
     }
 
@@ -441,6 +499,176 @@ public class FactusolService : IFactusolService
             Console.WriteLine($"Error obteniendo pedidos: {ex.Message}");
         }
         return pedidos;
+    }
+    public async Task<List<Factura>> GetFacturasAsync(DateTime? desde = null, DateTime? hasta = null, string? serie = null)
+    {
+        var facturas = new List<Factura>();
+        try
+        {
+            using var connection = new OleDbConnection(GetConnectionString());
+            await connection.OpenAsync();
+            
+            var conditions = new List<string>();
+            var parameters = new List<(string, object)>();
+
+            string query = "SELECT TIPFAC, CODFAC, REFFAC, FECFAC, HORFAC, ESTFAC, CLIFAC, CNIFAC, TELFAC, CNOFAC, CDOFAC, TOTFAC, EMAFAC FROM F_FAC";
+
+            if (desde.HasValue) {
+                conditions.Add("FECFAC >= ?");
+                parameters.Add(("?", desde.Value.Date));
+            }
+            if (hasta.HasValue) {
+                conditions.Add("FECFAC <= ?");
+                parameters.Add(("?", hasta.Value.Date));
+            }
+            if (!string.IsNullOrEmpty(serie)) {
+                conditions.Add("TIPFAC = ?");
+                parameters.Add(("?", serie));
+            }
+
+            if (conditions.Any()) {
+                query += " WHERE " + string.Join(" AND ", conditions);
+            }
+            
+            query += " ORDER BY FECFAC DESC, CODFAC DESC";
+
+            using var command = new OleDbCommand(query, connection);
+            foreach (var p in parameters) {
+                var param = command.Parameters.AddWithValue(p.Item1, p.Item2);
+                if (p.Item2 is DateTime) param.OleDbType = OleDbType.DBDate;
+            }
+            
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                facturas.Add(new Factura
+                {
+                    TIPFAC = reader["TIPFAC"].ToString() ?? "",
+                    CODFAC = reader["CODFAC"] != DBNull.Value ? Convert.ToDouble(reader["CODFAC"]) : 0,
+                    REFFAC = reader["REFFAC"].ToString() ?? "",
+                    FECFAC = reader["FECFAC"] != DBNull.Value ? Convert.ToDateTime(reader["FECFAC"]) : DateTime.Now,
+                    HORFAC = reader["HORFAC"] != DBNull.Value ? Convert.ToDateTime(reader["HORFAC"]) : DateTime.Now,
+                    ESTFAC = reader["ESTFAC"] != DBNull.Value ? Convert.ToDouble(reader["ESTFAC"]) : 0,
+                    CLIFAC = reader["CLIFAC"] != DBNull.Value ? Convert.ToDouble(reader["CLIFAC"]) : 0,
+                    CNIFAC = reader["CNIFAC"].ToString() ?? "",
+                    TELFAC = reader["TELFAC"].ToString() ?? "",
+                    CNOFAC = reader["CNOFAC"].ToString() ?? "",
+                    CDOFAC = reader["CDOFAC"].ToString() ?? "",
+                    TOTFAC = reader["TOTFAC"] != DBNull.Value ? Convert.ToDecimal(reader["TOTFAC"]) : 0,
+                    EMAFAC = reader["EMAFAC"] != DBNull.Value ? Convert.ToDouble(reader["EMAFAC"]) : 0
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error obteniendo facturas: {ex.Message}");
+        }
+        return facturas;
+    }
+
+
+    public async Task<List<string>> TestSchemaAsync()
+    {
+        var cols = new List<string>();
+        try {
+            using var conn = new OleDbConnection(GetConnectionString());
+            await conn.OpenAsync();
+            using var cmd = new OleDbCommand("SELECT TOP 1 * FROM F_COB", conn);
+            using var r = await cmd.ExecuteReaderAsync();
+            for(int i = 0; i < r.FieldCount; i++) cols.Add(r.GetName(i));
+        } catch(Exception e) { cols.Add(e.Message); }
+        return cols;
+    }
+
+    public async Task<List<FacturaLinea>> GetFacturaLineasAsync(string serie, double numero)
+    {
+        var lineas = new List<FacturaLinea>();
+        try
+        {
+            using var connection = new OleDbConnection(GetConnectionString());
+            await connection.OpenAsync();
+            
+            string query = "SELECT ARTLFA, DESLFA, CANLFA, PRELFA, DT1LFA, IVALFA, TOTLFA FROM F_LFA WHERE TIPLFA = ? AND CODLFA = ? ORDER BY POSLFA ASC";
+            using var command = new OleDbCommand(query, connection);
+            command.Parameters.Add("?", OleDbType.VarWChar).Value = serie;
+            command.Parameters.Add("?", OleDbType.Double).Value = numero;
+            
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                lineas.Add(new FacturaLinea
+                {
+                    CodigoArticulo = reader["ARTLFA"].ToString() ?? "",
+                    DescripcionArticulo = reader["DESLFA"].ToString() ?? "",
+                    Cantidad = reader["CANLFA"] != DBNull.Value ? Convert.ToDecimal(reader["CANLFA"]) : 0,
+                    Precio = reader["PRELFA"] != DBNull.Value ? Convert.ToDecimal(reader["PRELFA"]) : 0,
+                    Descuento1 = reader["DT1LFA"] != DBNull.Value ? Convert.ToDecimal(reader["DT1LFA"]) : 0,
+                    Iva = reader["IVALFA"] != DBNull.Value ? Convert.ToDecimal(reader["IVALFA"]) : 0,
+                    Total = reader["TOTLFA"] != DBNull.Value ? Convert.ToDecimal(reader["TOTLFA"]) : 0
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error obteniendo líneas de factura: {ex.Message}");
+        }
+        return lineas;
+    }
+
+    public async Task<List<Cobro>> GetCobrosFacturaAsync(string serie, double numero)
+    {
+        var cobros = new List<Cobro>();
+        try
+        {
+            using var connection = new OleDbConnection(GetConnectionString());
+            await connection.OpenAsync();
+            
+            // Intentamos con DOCCOB primero
+            string query = "SELECT CODCOB, FECCOB, IMPCOB, CPTCOB FROM F_COB WHERE DOCCOB = ?";
+            using var command = new OleDbCommand(query, connection);
+            command.Parameters.Add("?", OleDbType.Double).Value = numero;
+            
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                cobros.Add(new Cobro
+                {
+                    CODCOB = reader["CODCOB"] != DBNull.Value ? Convert.ToDouble(reader["CODCOB"]) : 0,
+                    FECCOB = reader["FECCOB"] != DBNull.Value ? Convert.ToDateTime(reader["FECCOB"]) : null,
+                    IMPCOB = reader["IMPCOB"] != DBNull.Value ? Convert.ToDecimal(reader["IMPCOB"]) : 0,
+                    CPTCOB = reader["CPTCOB"].ToString() ?? ""
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[F_COB] Error consultando por DOCCOB: {ex.Message}");
+        }
+        
+        // Búsqueda por texto en el concepto si no encontró por DOCCOB
+        if (cobros.Count == 0)
+        {
+            try {
+               using var connection2 = new OleDbConnection(GetConnectionString());
+               await connection2.OpenAsync();
+               string numStr = numero.ToString().PadLeft(6, '0');
+               string searchStr = $"%{serie} - {numStr}%"; 
+               string query2 = "SELECT CODCOB, FECCOB, IMPCOB, CPTCOB FROM F_COB WHERE CPTCOB LIKE ?";
+               using var command2 = new OleDbCommand(query2, connection2);
+               command2.Parameters.Add("?", OleDbType.VarWChar).Value = searchStr;
+               using var reader2 = await command2.ExecuteReaderAsync();
+               while(await reader2.ReadAsync()) {
+                   cobros.Add(new Cobro {
+                       CODCOB = reader2["CODCOB"] != DBNull.Value ? Convert.ToDouble(reader2["CODCOB"]) : 0,
+                       FECCOB = reader2["FECCOB"] != DBNull.Value ? Convert.ToDateTime(reader2["FECCOB"]) : null,
+                       IMPCOB = reader2["IMPCOB"] != DBNull.Value ? Convert.ToDecimal(reader2["IMPCOB"]) : 0,
+                       CPTCOB = reader2["CPTCOB"].ToString() ?? ""
+                   });
+               }
+            } catch { }
+        }
+
+        return cobros;
     }
 
     public async Task<List<PedidoLinea>> GetPedidoLineasAsync(string tip, double cod)
@@ -526,7 +754,25 @@ public class FactusolService : IFactusolService
             {
                 // 1. Número consecutivo si no existe
                 if (pedido.CODPCL == 0 || pedido.CODPCL == null)
+                {
                     pedido.CODPCL = await GetSiguientePedidoAsync(pedido.TIPPCL ?? "1");
+                }
+                else
+                {
+                    // Si el número ya viene dado, es probable que sea una edición.
+                    // Limpiamos las líneas y cabecera previas para evitar error de duplicados.
+                    string delLinSql = "DELETE FROM F_LPC WHERE TIPLPC = ? AND CODLPC = ?";
+                    using var cmdDelLin = new OleDbCommand(delLinSql, connection, transaction);
+                    cmdDelLin.Parameters.Add("?", OleDbType.VarWChar).Value = pedido.TIPPCL;
+                    cmdDelLin.Parameters.Add("?", OleDbType.Double).Value = pedido.CODPCL;
+                    await cmdDelLin.ExecuteNonQueryAsync();
+
+                    string delCabSql = "DELETE FROM F_PCL WHERE TIPPCL = ? AND CODPCL = ?";
+                    using var cmdDelCab = new OleDbCommand(delCabSql, connection, transaction);
+                    cmdDelCab.Parameters.Add("?", OleDbType.VarWChar).Value = pedido.TIPPCL;
+                    cmdDelCab.Parameters.Add("?", OleDbType.Double).Value = pedido.CODPCL;
+                    await cmdDelCab.ExecuteNonQueryAsync();
+                }
 
                 // 2. Obtener datos del cliente para la cabecera
                 string cdo = "", cpo = "", ccp = "", cpr = "", cni = "";
@@ -866,6 +1112,19 @@ public class FactusolService : IFactusolService
             {
                 config.OrderSettings = orderSection.Get<OrderSettings>() ?? new();
             }
+
+            // Cargar Ajustes de Túnel
+            var tunnelSection = _config.GetSection("TunnelConfig");
+            if (tunnelSection.Exists())
+            {
+                config.Tunnel = tunnelSection.Get<Shared.TunnelConfig>() ?? new();
+                // Prioridad: ManualUrl > _currentZrokUrl
+                config.Tunnel.CurrentUrl = !string.IsNullOrEmpty(config.Tunnel.ManualUrl) 
+                                        ? config.Tunnel.ManualUrl 
+                                        : _currentZrokUrl;
+                config.Tunnel.Status = _lastTunnelStatus;
+                config.Tunnel.LastErrorMessage = _lastTunnelError;
+            }
         } catch (Exception ex) {
             Console.WriteLine($"[CONFIG] Error leyendo appsettings: {ex.Message}");
         }
@@ -905,6 +1164,17 @@ public class FactusolService : IFactusolService
                     
                     json["IvaConfig"] = ivaNode;
                     json["OrderSettings"] = orderNode;
+
+                    // Actualizar TunnelConfig (sin CurrentUrl)
+                    var tunnelToSave = new { 
+                        Enabled = newConfig.Tunnel.Enabled,
+                        Provider = newConfig.Tunnel.Provider,
+                        AuthToken = newConfig.Tunnel.AuthToken,
+                        ReservedName = newConfig.Tunnel.ReservedName,
+                        LocalPort = newConfig.Tunnel.LocalPort,
+                        ManualUrl = newConfig.Tunnel.ManualUrl
+                    };
+                    json["TunnelConfig"] = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(tunnelToSave));
                     
                     await File.WriteAllTextAsync(configPath, json.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
                     totalSuccess = true;
@@ -940,4 +1210,197 @@ public class FactusolService : IFactusolService
             new Articulo { CODART = "A03", DESART = "Teclado Mecánico", PrecioVenta = 80.00m, FAMART = "INF", CANART = 50 },
         };
     }
-}
+    public async Task RestartTunnelAsync()
+    {
+        _currentZrokUrl = ""; // Limpiar URL vieja
+        _consoleLog.Clear();
+        AddToLog("<span style='color:#79c0ff;'>[SISTEMA] Reiniciando servicios de túnel...</span>");
+        var conf = _config.GetSection("TunnelConfig");
+        bool enabled = conf.GetValue<bool>("Enabled");
+        string provider = conf.GetValue<string>("Provider") ?? "zrok";
+        string? token = conf.GetValue<string>("AuthToken");
+        string? name = conf.GetValue<string>("ReservedName");
+        int port = conf.GetValue<int>("LocalPort");
+        if (port == 0) port = 44373;
+
+        if (!enabled) return;
+
+        // 1. Matar procesos previos
+        try {
+            foreach (var p in System.Diagnostics.Process.GetProcessesByName("ngrok")) p.Kill();
+            foreach (var p in System.Diagnostics.Process.GetProcessesByName("zrok")) p.Kill();
+        } catch { }
+
+        if (provider.ToLower() == "ngrok")
+        {
+            await StartNgrokAsync(token, name, port);
+        }
+        else
+        {
+            await StartZrokAsync(token, name, port);
+        }
+    }
+
+    private async Task StartNgrokAsync(string? token, string? domain, int port)
+    {
+        _lastTunnelStatus = "Iniciando...";
+        _lastTunnelError = "";
+
+        var ngrokPath = Path.Combine(AppContext.BaseDirectory, "ngrok", "ngrok.exe");
+        if (!File.Exists(ngrokPath)) ngrokPath = Path.Combine(Directory.GetCurrentDirectory(), "ngrok", "ngrok.exe");
+
+        if (!File.Exists(ngrokPath)) {
+            _lastTunnelStatus = "Error";
+            _lastTunnelError = "No se encontró ngrok.exe en la carpeta /Api/ngrok/";
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                // Configurar Token
+                if (!string.IsNullOrEmpty(token)) {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
+                        FileName = ngrokPath,
+                        Arguments = $"config add-authtoken {token}",
+                        CreateNoWindow = true,
+                        UseShellExecute = false
+                    })?.WaitForExit();
+                }
+
+                // Iniciar Túnel
+                string args = $"http {port}";
+                if (!string.IsNullOrEmpty(domain)) args += $" --domain={domain}";
+
+                var pTunnel = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
+                    FileName = ngrokPath,
+                    Arguments = args,
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardError = true // Capturar errores
+                });
+
+                if (pTunnel == null) {
+                    _lastTunnelStatus = "Error";
+                    _lastTunnelError = "No se pudo arrancar el proceso ngrok.exe";
+                    return;
+                }
+
+                _lastTunnelStatus = "Negociando túnel...";
+
+                // Esperar un poco a que ngrok levante y consultar su API local
+                using var client = new HttpClient();
+                bool detectado = false;
+
+                for(int i=0; i<10; i++) // 10 intentos = 20 segundos aprox
+                {
+                    if (pTunnel.HasExited) {
+                        var error = await pTunnel.StandardError.ReadToEndAsync();
+                        _lastTunnelStatus = "Error";
+                        _lastTunnelError = $"ngrok se cerró inesperadamente: {error}";
+                        AddToLog($"<span style='color:#f85149;'>[ERROR] {error}</span>");
+                        return;
+                    }
+
+                    try {
+                        AddToLog("<span style='color:#8b949e;'>[INFO] Consultando API local de ngrok...</span>");
+                        var response = await client.GetFromJsonAsync<System.Text.Json.Nodes.JsonNode>("http://localhost:4040/api/tunnels");
+                        var tunnels = response?["tunnels"]?.AsArray();
+                        if (tunnels != null && tunnels.Count > 0) {
+                            var publicUrl = tunnels[0]?["public_url"]?.ToString();
+                            if (!string.IsNullOrEmpty(publicUrl)) {
+                                SetZrokUrl(publicUrl);
+                                Console.WriteLine($"[NGROK] URL detectada: {publicUrl}");
+                                detectado = true;
+                                break;
+                            }
+                        }
+                    } catch { /* API no lista aún */ }
+                    
+                    await Task.Delay(2000);
+                }
+
+                if (!detectado) {
+                    _lastTunnelStatus = "Error";
+                    _lastTunnelError = "Tiempo de espera agotado. Verifica tu Authtoken y que el puerto sea el correcto.";
+                }
+            }
+            catch (Exception ex) { 
+                _lastTunnelStatus = "Error";
+                _lastTunnelError = ex.Message; 
+            }
+        });
+    }
+
+    private async Task StartZrokAsync(string? token, string? name, int port)
+    {
+        var zrokPath = Path.Combine(AppContext.BaseDirectory, "zrok", "zrok.exe");
+        if (!File.Exists(zrokPath)) zrokPath = Path.Combine(AppContext.BaseDirectory, "zrok", "zrok2.exe");
+        if (!File.Exists(zrokPath)) zrokPath = Path.Combine(Directory.GetCurrentDirectory(), "zrok", "zrok.exe");
+        if (!File.Exists(zrokPath)) zrokPath = Path.Combine(Directory.GetCurrentDirectory(), "zrok", "zrok2.exe");
+
+        if (!File.Exists(zrokPath)) return;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(token)) {
+                    var pEnable = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
+                        FileName = zrokPath,
+                        Arguments = $"enable {token}",
+                        CreateNoWindow = true,
+                        UseShellExecute = false
+                    });
+                    if (pEnable != null) await pEnable.WaitForExitAsync();
+                }
+
+                string args = string.IsNullOrEmpty(name) ? $"share public http://localhost:{port} --headless" : $"share reserved {name} --headless";
+                var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
+                    FileName = zrokPath,
+                    Arguments = args,
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                });
+
+                if (process != null) {
+                    process.OutputDataReceived += (s, e) => {
+                        if (string.IsNullOrEmpty(e.Data)) return;
+                        AddToLog(e.Data);
+                        
+                        var match = System.Text.RegularExpressions.Regex.Match(e.Data, @"[a-zA-Z0-9.-]+\.zrok\.io");
+                        if (match.Success && e.Data.Contains("access your zrok share")) {
+                            string url = "https://" + match.Value;
+                            SetZrokUrl(url);
+                            AddToLog("<span style='color:#7ee787; font-weight:bold;'>¡TÚNEL ZROK ACTIVO!</span>");
+                        }
+                    };
+                    process.BeginOutputReadLine();
+                }
+            }
+            catch (Exception ex) { Console.WriteLine($"[ZROK] Error: {ex.Message}"); }
+        });
+    }
+
+    private string CalcularDvDIAN(string nitString)
+        {
+            if (string.IsNullOrEmpty(nitString)) return "";
+            string nit = System.Text.RegularExpressions.Regex.Replace(nitString, @"\D", "");
+            if (string.IsNullOrEmpty(nit)) return "";
+
+            int[] vpri = new int[] { 3, 7, 13, 17, 19, 23, 29, 37, 41, 43, 47, 53, 59, 67, 71 };
+            int x = 0;
+            int z = nit.Length;
+
+            for (int i = 0; i < z; i++)
+            {
+                x += (nit[z - 1 - i] - '0') * vpri[i];
+            }
+
+            int y = x % 11;
+            return (y > 1) ? (11 - y).ToString() : y.ToString();
+        }
+    }

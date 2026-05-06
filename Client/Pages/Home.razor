@@ -60,6 +60,21 @@
             </MudPaper>
         </MudItem>
 
+        <!-- Zrok URL (Dynamic) -->
+        @if (!string.IsNullOrEmpty(zrokUrl))
+        {
+            <MudItem xs="12">
+                <MudPaper Elevation="0" Class="pa-4 rounded-xl d-flex align-center" Style="background-color: #f0fdf4; border: 1px solid #bbf7d0; color: #166534;">
+                    <MudIcon Icon="@Icons.Material.Filled.Public" Class="mr-3" Color="Color.Success" />
+                    <div class="flex-grow-1">
+                        <MudText Typo="Typo.caption" Class="font-weight-bold" Style="color: #15803d; letter-spacing: 0.5px;">ACCESO REMOTO ACTIVO</MudText>
+                        <MudText Typo="Typo.body2" Class="font-weight-bold">@zrokUrl</MudText>
+                    </div>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Success" Size="Size.Small" OnClick="@(() => CopyUrl())" Class="rounded-lg ml-2">Copiar URL</MudButton>
+                </MudPaper>
+            </MudItem>
+        }
+
         <!-- Quick Access Section -->
         <MudItem xs="12">
             <div class="mt-4 mb-2">
@@ -132,6 +147,7 @@
     private int pendientesSync = 0;
     private string sellerName = "";
     private string sellerId = "";
+    private string zrokUrl = "";
 
     public List<ChartSeries<double>> Series = new List<ChartSeries<double>>()
     {
@@ -148,6 +164,15 @@
             var pedidos = await Http.GetFromJsonAsync<List<Pedido>>("api/pedidos") ?? new();
             pedidosHoy = pedidos.Count(p => p.Fecha.Date == DateTime.Today);
             pendientesSync = pedidos.Count(p => p.ESTPCL == 0);
+
+            // Cargar URL de zrok
+            var config = await Http.GetFromJsonAsync<GlobalConfig>("/api/config/global");
+            zrokUrl = config?.Tunnel?.CurrentUrl ?? "";
         } catch { }
+    }
+
+    private async Task CopyUrl()
+    {
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", zrokUrl);
     }
 }
