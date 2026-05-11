@@ -642,6 +642,7 @@ namespace FactuSync.Shared
         public string CTPAGE { get; set; } = string.Empty;
 
         public bool EsJefe => JEQAGE == 1;
+        public AgentPermission Permissions { get; set; } = new();
     }
 
     public class GlobalConfig

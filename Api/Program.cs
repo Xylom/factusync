@@ -175,6 +175,13 @@ api.MapGet("/config/global", (IFactusolService service) =>
     return Results.Ok(globalConfig);
 });
 
+api.MapGet("/config/system-info", (IFactusolService service) => 
+{
+    var path = service.GetDbPath();
+    var dbName = !string.IsNullOrEmpty(path) ? Path.GetFileName(path) : "No configurada";
+    return Results.Ok(new { dbName });
+});
+
 api.MapPost("/config/global", async (IFactusolService service, GlobalConfig newConfig) => 
 {
     var success = await service.UpdateGlobalConfigAsync(newConfig);

@@ -218,8 +218,14 @@
                 if (agente != null)
                 {
                     await JS.InvokeVoidAsync("sessionStorage.setItem", "seller_name", agente.NOMAGE);
-                    await JS.InvokeVoidAsync("sessionStorage.setItem", "seller_id", agente.CODAGE);
+                    await JS.InvokeVoidAsync("sessionStorage.setItem", "seller_id", agente.CODAGE?.ToString() ?? "");
                     await JS.InvokeVoidAsync("sessionStorage.setItem", "is_boss", agente.EsJefe ? "1" : "0");
+                    
+                    // Almacenar permisos detallados
+                    await JS.InvokeVoidAsync("sessionStorage.setItem", "perm_delete", agente.Permissions.PermitirEliminar ? "1" : "0");
+                    await JS.InvokeVoidAsync("sessionStorage.setItem", "perm_discounts", agente.Permissions.PermitirDescuentos ? "1" : "0");
+                    await JS.InvokeVoidAsync("sessionStorage.setItem", "perm_restricted_view", agente.Permissions.SoloVerPedidosPropios ? "1" : "0");
+                    await JS.InvokeVoidAsync("sessionStorage.setItem", "default_serie", agente.Permissions.SeriePorDefecto ?? "1");
                 }
                 Navigation.NavigateTo("/dashboard");
             } else {

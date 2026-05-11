@@ -1022,21 +1022,30 @@ public class FactusolService : IFactusolService
                 // 1. Verificar si tiene el acceso web activado en Factusol (SUWAGE = 1)
                 if (agente.TieneAccesoWeb)
                 {
-                    // 2. Verificar restricciones adicionales en la configuración global
+                    // 2. Adjuntar permisos desde la configuración global
                     var config = GetGlobalConfig();
+                    var key = agente.CODAGE?.ToString() ?? "";
+                    
+                    if (config.OrderSettings.PermisosAgentes.TryGetValue(key, out var perm))
+                    {
+                        agente.Permissions = perm;
+                    }
+                    else if (agente.EsJefe)
+                    {
+                        // Los jefes tienen todos los permisos por defecto si no están en el diccionario
+                        agente.Permissions = new AgentPermission { 
+                            AccesoMovil = true, 
+                            PermitirDescuentos = true, 
+                            PermitirEliminar = true,
+                            SoloVerPedidosPropios = false 
+                        };
+                    }
+
                     if (config.OrderSettings.RestringirPedidosAAgentes)
                     {
-                        var key = agente.CODAGE?.ToString() ?? "";
-                        if (config.OrderSettings.PermisosAgentes.TryGetValue(key, out var perm))
-                        {
-                            if (!perm.AccesoMovil) return null; // Acceso denegado por config
-                        }
-                        else
-                        {
-                            // Si no está en el diccionario y hay restricción, denegar
-                            return null;
-                        }
+                        if (!agente.Permissions.AccesoMovil) return null; // Acceso denegado por config
                     }
+
                     return agente;
                 }
             }
@@ -1263,7 +1272,7 @@ public class FactusolService : IFactusolService
                 if (!string.IsNullOrEmpty(token)) {
                     System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
                         FileName = ngrokPath,
-                        Arguments = $"config add-authtoken {token}",
+                        Arguments = $"config add-authtoken \"{token}\"",
                         CreateNoWindow = true,
                         UseShellExecute = false
                     })?.WaitForExit();
@@ -1271,7 +1280,7 @@ public class FactusolService : IFactusolService
 
                 // Iniciar Túnel
                 string args = $"http {port}";
-                if (!string.IsNullOrEmpty(domain)) args += $" --domain={domain}";
+                if (!string.IsNullOrEmpty(domain)) args += $" --domain=\"{domain}\"";
 
                 var pTunnel = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
                     FileName = ngrokPath,
@@ -1346,17 +1355,87 @@ public class FactusolService : IFactusolService
         {
             try
             {
+                // Limpiar el token de espacios accidentales y comandos pegados por error
+                token = token?.Trim();
                 if (!string.IsNullOrEmpty(token)) {
-                    var pEnable = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
-                        FileName = zrokPath,
-                        Arguments = $"enable {token}",
-                        CreateNoWindow = true,
-                        UseShellExecute = false
-                    });
-                    if (pEnable != null) await pEnable.WaitForExitAsync();
+                    if (token.StartsWith("zrok enable ", StringComparison.OrdinalIgnoreCase)) token = token.Substring(12).Trim();
+                    else if (token.StartsWith("enable ", StringComparison.OrdinalIgnoreCase)) token = token.Substring(7).Trim();
+                    else if (token.StartsWith("zrok ", StringComparison.OrdinalIgnoreCase)) token = token.Substring(5).Trim();
                 }
 
-                string args = string.IsNullOrEmpty(name) ? $"share public http://localhost:{port} --headless" : $"share reserved {name} --headless";
+                // 1. Validar y habilitar si hay token
+                if (!string.IsNullOrEmpty(token)) {
+                    // Detección simple de token equivocado (Ngrok tokens suelen ser largos y con guiones bajos/puntos)
+                    if (token.Length > 30 && (token.Contains("_") || token.Contains(".")))
+                    {
+                        AddToLog("<span style='color:#ff9800;'>[AVISO] El token parece ser de Ngrok pero el proveedor es Zrok.</span>");
+                    }
+
+                    string maskedToken = token.Length > 8 ? $"{token.Substring(0, 4)}...{token.Substring(token.Length - 4)}" : "****";
+                    AddToLog($"<span style='color:#8b949e;'>[ZROK] Habilitando entorno con token {maskedToken}...</span>");
+                    
+                    var pEnable = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
+                        FileName = zrokPath,
+                        Arguments = $"enable \"{token}\" --headless",
+                        CreateNoWindow = true,
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        StandardOutputEncoding = System.Text.Encoding.UTF8,
+                        StandardErrorEncoding = System.Text.Encoding.UTF8
+                    });
+                    if (pEnable != null) {
+                        var outEnable = await pEnable.StandardOutput.ReadToEndAsync();
+                        var errEnable = await pEnable.StandardError.ReadToEndAsync();
+                        await pEnable.WaitForExitAsync();
+                        
+                        if (errEnable.Contains("401") || outEnable.Contains("401")) {
+                            AddToLog("<span style='color:#f85149;'>[ERROR] Token de Zrok no autorizado (401). Verifica tu token en la configuración.</span>");
+                            return; // Detener si falla la autenticación
+                        }
+                        
+                        if (pEnable.ExitCode != 0 && 
+                            !(errEnable.Contains("already") && errEnable.Contains("enabled")) && 
+                            !(outEnable.Contains("already") && outEnable.Contains("enabled"))) {
+                            
+                            AddToLog($"<span style='color:#f85149;'>[ERROR] No se pudo habilitar zrok (Código {pEnable.ExitCode}).</span>");
+                            if (!string.IsNullOrEmpty(errEnable)) AddToLog($"[ZROK ERR] {errEnable}");
+                            return; // Detener solo si es un error real
+                        }
+                        
+                        AddToLog("<span style='color:#7ee787;'>[ZROK] Entorno verificado/habilitado.</span>");
+                    }
+                }
+
+                // 2. Consultar Status y verificar si el entorno está cargado
+                AddToLog("<span style='color:#8b949e;'>[ZROK] Consultando estado del entorno...</span>");
+                var pStatus = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
+                    FileName = zrokPath,
+                    Arguments = "status",
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    StandardOutputEncoding = System.Text.Encoding.UTF8,
+                    StandardErrorEncoding = System.Text.Encoding.UTF8
+                });
+                if (pStatus != null) {
+                    var outStatus = await pStatus.StandardOutput.ReadToEndAsync();
+                    var errStatus = await pStatus.StandardError.ReadToEndAsync();
+                    await pStatus.WaitForExitAsync();
+
+                    if (!string.IsNullOrEmpty(outStatus)) AddToLog($"[ZROK STATUS]\n{outStatus}");
+                    
+                    if (outStatus.Contains("unable to load environment") || errStatus.Contains("unable to load environment") || pStatus.ExitCode != 0) {
+                        AddToLog("<span style='color:#f85149;'>[ERROR] No se pudo cargar el entorno de zrok. Asegúrate de haber ingresado el Token.</span>");
+                        return; // No continuar al share si no hay entorno
+                    }
+                }
+
+                // 3. Iniciar Share
+                string args = string.IsNullOrEmpty(name) ? $"share public http://localhost:{port} --headless" : $"share reserved \"{name}\" --headless";
+                AddToLog($"<span style='color:#8b949e;'>[ZROK] Iniciando share: {args}</span>");
+
                 var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
                     FileName = zrokPath,
                     Arguments = args,
@@ -1378,10 +1457,18 @@ public class FactusolService : IFactusolService
                             AddToLog("<span style='color:#7ee787; font-weight:bold;'>¡TÚNEL ZROK ACTIVO!</span>");
                         }
                     };
+                    process.ErrorDataReceived += (s, e) => {
+                        if (string.IsNullOrEmpty(e.Data)) return;
+                        AddToLog($"<span style='color:#f85149;'>[ZROK ERR] {e.Data}</span>");
+                    };
                     process.BeginOutputReadLine();
+                    process.BeginErrorReadLine();
                 }
             }
-            catch (Exception ex) { Console.WriteLine($"[ZROK] Error: {ex.Message}"); }
+            catch (Exception ex) { 
+                Console.WriteLine($"[ZROK] Error: {ex.Message}"); 
+                AddToLog($"<span style='color:#f85149;'>[ZROK ERROR CRITICO] {ex.Message}</span>");
+            }
         });
     }
 

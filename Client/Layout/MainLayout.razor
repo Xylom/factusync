@@ -12,29 +12,48 @@
             <img src="images/logo_horizontal.png" alt="FactuSync" style="height: 40px;" />
         </div>
         <MudSpacer />
-        <MudAvatar Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">XY</MudAvatar>
+        <MudAvatar Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">@AvatarLetters</MudAvatar>
     </MudAppBar>
     
-    <MudDrawer @bind-Open="@_drawerOpen" Elevation="1" ClipMode="DrawerClipMode.Always" Class="border-none">
+    <MudDrawer @bind-Open="@_drawerOpen" Elevation="1" ClipMode="DrawerClipMode.Always" Class="border-none d-flex flex-column" Style="height: calc(100vh - 64px) !important;">
         <MudDrawerHeader Class="pa-4">
-            <MudText Typo="Typo.h6" Class="font-weight-bold">Configuraciones</MudText>
+            <MudText Typo="Typo.h6" Class="font-weight-bold">FactuSync</MudText>
         </MudDrawerHeader>
-        <MudNavMenu Class="mt-2">
-            <MudNavLink Href="/dashboard" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.SpaceDashboard" Class="rounded-lg mx-2 mb-1">Inicio</MudNavLink>
-            <MudNavLink Href="/clientes" Icon="@Icons.Material.Filled.PersonSearch" Class="rounded-lg mx-2 mb-1">Clientes</MudNavLink>
-            <MudNavLink Href="/pedidos" Icon="@Icons.Material.Filled.Receipt" Class="rounded-lg mx-2 mb-1">Mis Pedidos</MudNavLink>
-            <MudNavLink Href="/facturas" Icon="@Icons.Material.Filled.RequestQuote" Class="rounded-lg mx-2 mb-1">Facturas</MudNavLink>
-            <MudNavLink Href="/articulos" Icon="@Icons.Material.Filled.Category" Class="rounded-lg mx-2 mb-1">Artículos</MudNavLink>
+        
+        <div class="flex-grow-1 overflow-auto">
+            <MudNavMenu Class="mt-2">
+                <MudNavLink Href="/dashboard" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.SpaceDashboard" Class="rounded-lg mx-2 mb-1">Inicio</MudNavLink>
+                <MudNavLink Href="/clientes" Icon="@Icons.Material.Filled.PersonSearch" Class="rounded-lg mx-2 mb-1">Clientes</MudNavLink>
+                <MudNavLink Href="/pedidos" Icon="@Icons.Material.Filled.Receipt" Class="rounded-lg mx-2 mb-1">Mis Pedidos</MudNavLink>
+                <MudNavLink Href="/facturas" Icon="@Icons.Material.Filled.RequestQuote" Class="rounded-lg mx-2 mb-1">Facturas</MudNavLink>
+                <MudNavLink Href="/articulos" Icon="@Icons.Material.Filled.Category" Class="rounded-lg mx-2 mb-1">Artículos</MudNavLink>
+                
+                @if (isBoss)
+                {
+                    <MudNavLink Href="/configuracion" Icon="@Icons.Material.Filled.AdminPanelSettings" Class="rounded-lg mx-2 mb-1">Configuraciones</MudNavLink>
+                    <MudNavLink Href="/terminal" Icon="@Icons.Material.Filled.Terminal" Class="rounded-lg mx-2 mb-1">Terminal Túnel</MudNavLink>
+                }
+            </MudNavMenu>
+        </div>
+
+        <div class="pa-4 mt-auto border-t border-solid pb-20 pb-md-4" style="border-color: #f1f3f5; background-color: #fafafa;">
+            <div class="d-flex align-center mb-3">
+                <MudAvatar Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small" Class="mr-3">@AvatarLetters</MudAvatar>
+                <div style="overflow: hidden;">
+                    <MudText Typo="Typo.body2" Class="font-weight-bold text-truncate" Style="color: #1a237e;">@userName</MudText>
+                    <MudText Typo="Typo.caption" Style="color: #78909c;">@(isBoss ? "Administrador" : "Agente Comercial")</MudText>
+                </div>
+            </div>
             
-            @if (isBoss)
-            {
-                <MudNavLink Href="/configuracion" Icon="@Icons.Material.Filled.AdminPanelSettings" Class="rounded-lg mx-2 mb-1">Configuraciones</MudNavLink>
-                <MudNavLink Href="/terminal" Icon="@Icons.Material.Filled.Terminal" Class="rounded-lg mx-2 mb-1">Terminal Túnel</MudNavLink>
-            }
-            
-            <MudDivider Class="my-4 mx-4" />
-            <MudNavLink Href="/" Icon="@Icons.Material.Filled.Logout" Class="rounded-lg mx-2 mb-1">Cerrar Sesión</MudNavLink>
-        </MudNavMenu>
+            <div class="pa-2 rounded-lg" style="background-color: #e3f2fd; border: 1px solid #bbdefb;">
+                <div class="d-flex align-center">
+                    <MudIcon Icon="@Icons.Material.Filled.Storage" Size="Size.Small" Color="Color.Primary" Class="mr-2" />
+                    <MudText Typo="Typo.caption" Class="font-weight-bold" Style="color: #0d47a1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">@dbName</MudText>
+                </div>
+            </div>
+
+            <MudButton Href="/" StartIcon="@Icons.Material.Filled.Logout" FullWidth="true" Variant="Variant.Text" Color="Color.Error" Class="mt-4 rounded-lg" Style="text-transform: none; justify-content: flex-start;">Cerrar Sesión</MudButton>
+        </div>
     </MudDrawer>
 
     <MudMainContent Class="mud-background-gray">
@@ -57,14 +76,27 @@
 @code {
     private bool _drawerOpen = true;
     private bool isBoss = false;
+    private string userName = "Usuario";
+    private string dbName = "Cargando...";
+
+    private string AvatarLetters => !string.IsNullOrEmpty(userName) && userName.Length >= 2 
+        ? userName.Substring(0, 2).ToUpper() 
+        : (userName.Length > 0 ? userName.Substring(0, 1).ToUpper() : "U");
 
     [Inject] IJSRuntime JS { get; set; } = default!;
+    [Inject] HttpClient Http { get; set; } = default!;
 
     protected override async Task OnInitializedAsync()
     {
         try {
             var boss = await JS.InvokeAsync<string>("sessionStorage.getItem", "is_boss");
             isBoss = boss == "1";
+            
+            var name = await JS.InvokeAsync<string>("sessionStorage.getItem", "seller_name");
+            if (!string.IsNullOrEmpty(name)) userName = name;
+
+            var info = await Http.GetFromJsonAsync<System.Text.Json.Nodes.JsonNode>("api/config/system-info");
+            dbName = info?["dbName"]?.ToString() ?? "Desconocida";
         } catch { }
     }
 

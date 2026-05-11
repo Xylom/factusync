@@ -244,19 +244,8 @@
     private async Task CargarPermisos()
     {
         try {
-            var config = await Http.GetFromJsonAsync<GlobalConfig>("/api/config/global");
-            var seller_id = await JS.InvokeAsync<string?>("sessionStorage.getItem", "seller_id");
-            
-            if (isBoss) {
-                canDelete = true;
-                return;
-            }
-
-            if (config != null && !string.IsNullOrEmpty(seller_id)) {
-                if (config.OrderSettings.PermisosAgentes.TryGetValue(seller_id, out var perm)) {
-                    canDelete = perm.PermitirEliminar;
-                }
-            }
+            var pDelete = await JS.InvokeAsync<string?>("sessionStorage.getItem", "perm_delete");
+            canDelete = pDelete == "1";
         } catch { }
     }
 
@@ -264,15 +253,9 @@
     {
         cargando = true;
         try {
-            var config = await Http.GetFromJsonAsync<GlobalConfig>("/api/config/global");
             string? s_id = await JS.InvokeAsync<string?>("sessionStorage.getItem", "seller_id");
-            
-            bool restricted = false;
-            if (config != null && !string.IsNullOrEmpty(s_id))
-            {
-                if (config.OrderSettings.PermisosAgentes.TryGetValue(s_id, out var p))
-                    restricted = p.SoloVerPedidosPropios;
-            }
+            var pRestricted = await JS.InvokeAsync<string?>("sessionStorage.getItem", "perm_restricted_view");
+            bool restricted = pRestricted == "1";
 
             // Construir URL con filtros
             var query = new List<string>();
